@@ -48,8 +48,9 @@
     <Reference Include="System.Xml" />
     <Reference Include="uclib, Version=1.0.0.1, Culture=neutral, PublicKeyToken=3e8298a1788b69bf, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\Unknown6656 Core Library\bin\Debug\uclib.dll</HintPath>
-      <Private>False</Private>
+      <HintPath>..\Unknown6656 Core Library\bin\Release\uclib.dll</HintPath>
+      <Private>True</Private>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -70,7 +71,6 @@
   <ItemGroup>
     <Content Include="PrintedHeader.txt" />
     <Content Include="TODO.txt" />
-    <EmbeddedResource Include="Resources\uclib.dll" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Properties\Resources.resx">
@@ -79,6 +79,13 @@
     </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>echo rem "$(TargetDir)uclib.dll"
+echo copy "B:\Projects.VisualStudio\Unknown6656 Core Library\Unknown6656 Core Library\bin\Debug\uclib.dll" "$(TargetDir)uclib.dll"</PostBuildEvent>
+  </PropertyGroup>
+  <PropertyGroup>
+    <PreBuildEvent>echo rem "$(TargetDir)uclib.dll"</PreBuildEvent>
+  </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">

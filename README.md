@@ -8,7 +8,7 @@ The `rundll.net`-project is the .NET equivalent of Window's [`rundll.exe`/`rundl
 
 The usage is defined as follows:
 ```
-    rundll.net.exe [options] <library> ['new'] <method> [arguments, ...]
+    rundll.net.exe <library> ['new'] <method> [arguments, ...] [options]
 ```
 
 with the following parameters:
@@ -23,10 +23,11 @@ with the following parameters:
   An optional list of arguments (separated by commas without any whitespace), which will be passed as method parameters to the given method.<br/>
 A serilaized XML- or JSON-string can be passed with `@XML:""....""` or `@JSON:""....""`, where `....` is the XML- or JSON-string in question. If the parameter shall bede serialized from a JSON- or XML-file, the argument shall be passed as `@JSON::""....""` or `@XML::""....""`, where `....` represents the path to the given JSON- or XML-file.
 * `options`<br/>
-  An optional list of global options, which can be used at any position inside the commandline
+  An optional list of global options.
 
 The following global options are defined:
 
+* `-d_`, `--depth_`<br/>Sets the return value print depth (the symbol `_` must be a positive integer value between 1 and 7).
 * `-v`, `--verbose`<br/>Prints verbose information about the loaded assembly.
 * `-s`, `--stdlib`<br/>Includes the .NET standard libraries ([`System.Data.dll`](http://referencesource.microsoft.com/#system.data,namespaces), [`System.dll`](http://referencesource.microsoft.com/#system,namespaces) and [`System.Core.dll`](http://referencesource.microsoft.com/#system.core,namespaces)).<br/>
   _Note: The library [`mscorlib.dll`](http://referencesource.microsoft.com/#mscorlib,namespaces) is always included._
@@ -35,7 +36,7 @@ The following global options are defined:
                 
 Valid usage examples are:
 ```
-    rundll.net.exe mscorlib.dll System.IntPtr.Size
-    rundll.net.exe /root/Documents/library.olb new ImgLib.Image.Rotate()
-    rundll.net.exe \\127.0.0.1\Public\app.exe new MainWindow..ctor(string) ""foobar"" --stdlib
+    rundll.net mscorlib.dll System.IntPtr.Size -d2
+    rundll.net /root/Documents/library.olb new ImgLib.Image.Rotate()
+    rundll.net \\127.0.0.1\Shares\Public\app.exe new MainWindow..ctor(string) ""foobar"" --stdlib
 ```

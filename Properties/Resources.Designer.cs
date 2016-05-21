@@ -73,15 +73,5 @@ namespace RunDLL.Properties {
                 return ResourceManager.GetString("PrintedHeader", resourceCulture);
             }
         }
-        
-        /// <summary>
-        ///   Sucht eine lokalisierte Ressource vom Typ System.Byte[].
-        /// </summary>
-        internal static byte[] uclib {
-            get {
-                object obj = ResourceManager.GetObject("uclib", resourceCulture);
-                return ((byte[])(obj));
-            }
-        }
     }
 }

@@ -65,12 +65,12 @@ namespace RunDLL
         /// </summary>
         static Program()
         {
-            AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler((o, a) => {
-                if (a.Name.ToLower().Contains("uclib"))
-                    return Assembly.Load(Properties.Resources.uclib);
-                else
-                    return null;
-            });
+            //AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler((o, a) => {
+            //    if (a.Name.ToLower().Contains("uclib"))
+            //        return Assembly.Load(Properties.Resources.uclib);
+            //    else
+            //        return null;
+            //});
         }
 
         /// <summary>
@@ -110,7 +110,7 @@ namespace RunDLL
             if (!targnfo.Exists)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("The assembly `{0}` could not not be found.", targnfo);
+                Console.WriteLine("The file `{0}` could not not be found.", targnfo);
                 Console.ForegroundColor = ConsoleColor.White;
 
                 return 0;
@@ -118,6 +118,21 @@ namespace RunDLL
 
             try
             {
+                PEHeader hdr;
+
+                try
+                {
+                    hdr = new PEHeader(targnfo.FullName);
+                }
+                catch
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("The file `{0}` does not seem to contain a valid PE/COFF header.", targnfo);
+                    Console.ForegroundColor = ConsoleColor.White;
+
+                    return 0;
+                }
+
                 targasm = Assembly.LoadFrom(targnfo.FullName);
                 asmname = targasm.GetName();
 
@@ -139,7 +154,7 @@ namespace RunDLL
                 if (verbose)
                     Console.WriteLine("    Public key:     {0}", string.Join("", from b in asmname.GetPublicKey() ?? new byte[0] select b.ToString("X2")));
 
-                Console.WriteLine("    Architecture:   {0}", asmname.ProcessorArchitecture);
+                Console.WriteLine("    Architecture:   {0}, {1}Bit", asmname.ProcessorArchitecture, hdr.Is32BitHeader ? 32 : 64);
 
                 if (verbose)
                     Console.WriteLine("    Culture name:   {0}", asmname.CultureName ?? "??-??");
@@ -155,12 +170,42 @@ namespace RunDLL
                     Console.WriteLine("    Metadata token: {0:x8}", manmodule.MetadataToken);
                     Console.WriteLine("    MD module name: {0}", manmodule.Name);
                     Console.WriteLine("    MD module GUID: {0}", manmodule.ModuleVersionId);
+                    Console.WriteLine("    PE DLL Charac.: 0x{0:x4} ({1})", hdr.FileHeader.Characteristics, (PEDLLCharacteristics)hdr.FileHeader.Characteristics);
+                    Console.WriteLine("    Machine:        0x{0:x4} ({1})", hdr.FileHeader.Machine, (IMAGE_FILE_MACHINE)hdr.FileHeader.Machine);
+
+                    IMAGE_DATA_DIRECTORY clrhdr;
+                    int subs = hdr.Is32BitHeader ? hdr.OptionalHeader32.Subsystem : hdr.OptionalHeader64.Subsystem;
+                    int chrs = hdr.Is32BitHeader ? hdr.OptionalHeader32.DllCharacteristics : hdr.OptionalHeader32.DllCharacteristics;
+                    
+                    Console.WriteLine("    Subsystem:      0x{0:x4} ({1})", subs, PEHeader.SubsystemStrings[(IMAGE_SUBSYSTEM)subs]);
+
+                    if (hdr.Is32BitHeader)
+                    {
+                        Console.WriteLine("    Size of code:   0x{0:x8}", hdr.OptionalHeader32.SizeOfCode);
+                        Console.WriteLine("    Base of code:   0x{0:x8}", hdr.OptionalHeader32.BaseOfCode);
+                        Console.WriteLine("    Base of data:   0x{0:x8}", hdr.OptionalHeader32.BaseOfData);
+                        Console.WriteLine("    Entrypt. addr.: 0x{0:x8}", hdr.OptionalHeader32.AddressOfEntryPoint);
+
+                        clrhdr = hdr.OptionalHeader32.CLRRuntimeHeader;
+                    }
+                    else
+                    {
+                        Console.WriteLine("    Size of code:   0x{0:x8}", hdr.OptionalHeader64.SizeOfCode);
+                        Console.WriteLine("    Base of code:   0x{0:x8}", hdr.OptionalHeader64.BaseOfCode);
+                        Console.WriteLine("    Entrypt. addr.: 0x{0:x8}", hdr.OptionalHeader64.AddressOfEntryPoint);
+
+                        clrhdr = hdr.OptionalHeader64.CLRRuntimeHeader;
+                    }
+                    
+                    Console.WriteLine("    Opt. DLL Char.: 0x{0:x4} ({1})", chrs, (OptionalDLLCharacteristics)chrs);
+                    Console.WriteLine("    CLR-Hdr. size:  0x{0:x8}", clrhdr.Size);
+                    Console.WriteLine("    CLR virt.addr.: 0x{0:x8}", clrhdr.VirtualAddress);
                 }
             }
             catch
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("The assembly `{0}` does not seem to contain a valid .NET-header.", targnfo);
+                Console.WriteLine("The PE-file `{0}` does not seem to contain a valid .NET-header.", targnfo);
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("Use `rundll32.exe` for natice 32-Bit and 64-Bit MS/PE-assemblies or\n`rundll.exe` for native 16-Bit MS/PE-assemblies instead.");
                 Console.ForegroundColor = ConsoleColor.White;
@@ -440,13 +485,22 @@ namespace RunDLL
                 }
                 catch
                 {
-                    Console.WriteLine(@return.var_dump(depth:3));
+                    int depth = 1;
+
+                    try 
+	                {	        
+		                depth = (from argv in args
+                                 let targv = argv.Trim().ToLower()
+                                 where targv.StartsWith("--depth") ||
+                                         targv.StartsWith("-d")
+                                 select int.Parse(Regex.Match(targv, @"^\s*(\-\-depth|\-d)(?<value>[1-7])\s*$").Groups["value"].ToString())).Max();
+	                } catch { }
+
+                    Console.WriteLine(@return.var_dump(depth:depth));
                 }
             else
                 Console.WriteLine(@return);
 
-            #endregion
-            #region
             #endregion
 
             return 0;
@@ -591,6 +645,8 @@ with the following parameters:
                 the path to the given JSON- or XML-file.
 
 The following options are also defined:
+    -d_, --depth_ - Sets the return value print depth (the symbol `_` must be
+                    a positive integer value between 1 and 7).
     -v, --verbose - Prints verbose information about the loaded assembly.
     -s, --stdlib  - Includes the .NET standard libraries (`System.Data`
                     `System` and `System.Core`).
@@ -599,7 +655,7 @@ The following options are also defined:
     -h, --help    - Displays this help page.
                 
 Valid usage examples are:
-    {0} mscorlib.dll System.IntPtr.Size
+    {0} mscorlib.dll System.IntPtr.Size --depth2
     {0} /root/Documents/library.olb new ImgLib.Image.Rotate()
     {0} \\127.0.0.1\app.exe new MainWindow::.ctor(string) ""foobar"" --stdlib
 ".TrimEnd(), modname, nfo.Name);
