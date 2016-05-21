@@ -4,6 +4,12 @@
 
 The `rundll.net`-project is the .NET equivalent of Window's [`rundll.exe`/`rundll32.exe`](https://support.microsoft.com/en-us/kb/164787)-applications, which allows the caller to run functions inside a given dynamic library. The `rundll.net`-application, however, also the executions of private and static methods of the given [library/module/assembly](https://msdn.microsoft.com/en-us/library/ms973231.aspx).
 
+The following image visualizes the basic execution timeline concept of the `rundll.net`-application:<br/>
+<img src="timeline.png" alt="Timeline" style="width: 300px; margin-left: 100px;"/>
+<br/>
+
+_&lt;TODO: add more text&gt;_
+
 ##Usage
 
 The usage is defined as follows:
@@ -30,7 +36,7 @@ The following global options are defined:
 * `-d_`, `--depth_`<br/>Sets the return value print depth (the symbol `_` must be a positive integer value between 1 and 7).
 * `-v`, `--verbose`<br/>Prints verbose information about the loaded assembly.
 * `-s`, `--stdlib`<br/>Includes the .NET standard libraries ([`System.Data.dll`](http://referencesource.microsoft.com/#system.data,namespaces), [`System.dll`](http://referencesource.microsoft.com/#system,namespaces) and [`System.Core.dll`](http://referencesource.microsoft.com/#system.core,namespaces)).<br/>
-  _Note: The library [`mscorlib.dll`](http://referencesource.microsoft.com/#mscorlib,namespaces) is always included._
+  _Note: The .NET core framework library [`mscorlib.dll`](http://referencesource.microsoft.com/#mscorlib,namespaces) is always included._
 * `-u`, `--uclib`<br/>Includes the .NET library `uclib`
 * `-h`, `--help`<br/>Displays this help page.
                 

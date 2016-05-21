@@ -431,7 +431,16 @@ namespace RunDLL
             object[] cparameters = new object[parameters.Count];
             ParameterInfo[] pnfos = member.GetParameters();
 
-            for (int i = 0, l = cparameters.Length; i < l; i++)
+            if (cparameters.Length < pnfos.Length)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Parameter count mismatch: The method `{0}` requires {1} parameter(s), but only {2} were given.", member.GetCPPSignature(), pnfos.Length, cparameters.Length);
+                Console.ForegroundColor = ConsoleColor.White;
+
+                return 0;
+            }
+
+            for (int i = 0, l = pnfos.Length; i < l; i++)
                 try
                 {
                     cparameters[i] = Convert.ChangeType(parameters[i], pnfos[i].ParameterType);
