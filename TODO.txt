@@ -1,0 +1,8 @@
+﻿+ Add custom assemblies
++ Add pointer creation without the need of a fixed address
++ Add argument pointer analyzation
++ Add argument array analyzation
++ Add argument generic/nested analyzation
++ Match on properties
+* Add other TypePattern cases
+* Add more core assemblies

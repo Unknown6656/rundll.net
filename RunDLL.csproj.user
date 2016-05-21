@@ -4,6 +4,6 @@
     <StartArguments>rundll.net.exe Program.Decoy%28char,long%29 a 12</StartArguments>
   </PropertyGroup>
   <PropertyGroup>
-    <ProjectView>ProjectFiles</ProjectView>
+    <ProjectView>ShowAllFiles</ProjectView>
   </PropertyGroup>
 </Project>
