@@ -1,18 +1,22 @@
-﻿using System.Web.Script.Serialization;
+﻿using System.Windows.Forms.Integration;
+using System.Web.Script.Serialization;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Globalization;
+using System.Diagnostics;
 using System.Collections;
 using CoreLib.Management;
 using System.Reflection;
 using Microsoft.CSharp;
+using System.Windows;
 using System.CodeDom;
 using System.Data;
 using System.Linq;
 using System.Text;
+using System.Xaml;
 using System.Xml;
 using System.IO;
 using System;
@@ -30,7 +34,7 @@ namespace RunDLL
     public unsafe static class Program
     {
         internal static readonly Regex REGEX_TYPE = new Regex(@"(?<namespace>(\w+\.)*)(?<class>\w+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?(?<name>\w+)(?<parameters>\(\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*\))?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?(?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<parameters>\(\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*\))?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         internal static readonly Dictionary<string, Tuple<string, string>> PRIMITIVES = new Dictionary<string, Tuple<string, string>>() {
             { "bool", new Tuple<string, string>("System", "Boolean") },
             { "byte", new Tuple<string, string>("System", "Byte") },
@@ -72,13 +76,23 @@ namespace RunDLL
             //        return null;
             //});
         }
-
+        
         /// <summary>
         /// The application's entry point
         /// </summary>
         /// <param name="args">Command line arguments</param>
         /// <returns>Application exit code</returns>
         public static int Main(string[] args)
+        {
+            int retcode = InnerMain(args);
+
+            if (Debugger.IsAttached)
+                Win32.system("pause");
+
+            return retcode;
+        }
+
+        private static int InnerMain(string[] args)
         {
             #region WARMUP / PREJIT
 
@@ -93,7 +107,7 @@ namespace RunDLL
 
             if (CheckHelp(args))
                 return 0;
-            else if (args.Length < 2)
+            else if (args.RegArguments().Length < 2)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Invalid argument count.{0}", helpstr);
@@ -138,11 +152,7 @@ namespace RunDLL
 
                 Module manmodule = targasm.ManifestModule;
 
-                bool verbose = (from string argv in args
-                                let targv = argv.Trim().ToLower()
-                                where targv == "--verbose" ||
-                                      targv == "--v"
-                                select false).Count() > 0;
+                bool verbose = CheckForOption(args, "verbose", "v");
 
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine("Assembly loaded:");
@@ -260,22 +270,23 @@ namespace RunDLL
                 typeof(string).Assembly,
             };
 
-            if ((from argv in args
-                 let targv = argv.Trim().ToLower()
-                 where targv == "--stdlib" ||
-                       targv == "-s"
-                 select false).Count() > 0)
+            if (CheckForOption(args, "stdlib", "s"))
             {
                 asms.Add(typeof(Uri).Assembly);
                 asms.Add(typeof(DataSet).Assembly);
                 asms.Add(typeof(EnumerableQuery).Assembly);
             }
 
-            if ((from argv in args
-                 let targv = argv.Trim().ToLower()
-                 where targv == "--uclib" ||
-                       targv == "-u"
-                 select false).Count() > 0)
+            if (CheckForOption(args, "wpflib", "w"))
+            {
+                asms.Add(typeof(XamlDirective).Assembly);
+                asms.Add(typeof(WindowsFormsHost).Assembly);
+                asms.Add(typeof(DependencyObject).Assembly);
+                asms.Add(typeof(System.Windows.DataObject).Assembly);
+                asms.Add(typeof(ConditionCollection).Assembly);
+            }
+
+            if (CheckForOption(args, "uclib", "u"))
                 asms.Add(Assembly.LoadFrom("uclib.dll"));
 
             asms.AddRange(from string s in new string[] { /* TODO: ADD MORE ASSEMBLIES HERE */ } select Assembly.LoadFrom(s));
@@ -303,13 +314,20 @@ namespace RunDLL
             Console.WriteLine("Type `{0}` loaded from `{1}`.", @class.FullName, asmname.Name);
             Console.ForegroundColor = ConsoleColor.White;
 
-            MethodInfo member = FetchMethod(@class, sig.Member, sig.IsProperty, sig.Arguments);
+            bool constructor;
+            object result = FetchMethod(@class, sig.Member, sig.IsProperty, ref @static, out constructor, sig.Arguments);
+            ConstructorInfo cmember = null;
+            MethodInfo member = null;
 
-            if (member == null)
+            if (result == null)
                 return 0;
+            else if (!constructor)
+                member = result as MethodInfo;
+            else
+                cmember = result as ConstructorInfo;
 
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("Member `{0}` loaded from `{1}`.", CommonLanguageRuntime.GetCPPSignature(member), asmname.Name);
+            Console.WriteLine("Member `{0}` loaded from `{1}`.", MemberName(result, constructor), asmname.Name);
             Console.ForegroundColor = ConsoleColor.White;
 
             #endregion
@@ -317,11 +335,11 @@ namespace RunDLL
 
             List<object> parameters = new List<object>();
 
-            args = args.Where(_ => !Regex.Match(_, @"(\/\?|\-\-?[a-z][0-9a-z\-_]*)", RegexOptions.Compiled | RegexOptions.IgnoreCase).Success).ToArray();
+            args = args.RegArguments();
 
             for (int i = 0, d = @static ? 2 : 3, l = args.Length - d; i < l; i++)
             {
-                ParameterInfo pnfo = member.GetParameters()[i];
+                ParameterInfo pnfo = (constructor ? cmember.GetParameters() : member.GetParameters())[i];
                 string argv = args[i + d];
                 string xml = "";
                 object param;
@@ -429,12 +447,12 @@ namespace RunDLL
 
             object instance, @return;
             object[] cparameters = new object[parameters.Count];
-            ParameterInfo[] pnfos = member.GetParameters();
+            ParameterInfo[] pnfos = (constructor ? cmember.GetParameters() : member.GetParameters());
 
             if (cparameters.Length < pnfos.Length)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Parameter count mismatch: The method `{0}` requires {1} parameter(s), but only {2} were given.", member.GetCPPSignature(), pnfos.Length, cparameters.Length);
+                Console.WriteLine("Parameter count mismatch: The method `{0}` requires {1} parameter(s), but only {2} were given.", MemberName(result, constructor), pnfos.Length, cparameters.Length);
                 Console.ForegroundColor = ConsoleColor.White;
 
                 return 0;
@@ -457,17 +475,21 @@ namespace RunDLL
             try
             {
                 Console.ForegroundColor = ConsoleColor.Gray;
-                Console.WriteLine("Invoking member `{0}::{1}`...", asmname.Name, member.GetCPPSignature());
-                Console.WriteLine("------------------------------------------------------------------------\n");
+                Console.WriteLine("Invoking member `{0}::{1}`...", asmname.Name, MemberName(result, constructor));
+                Console.WriteLine("--------------------------- STDSTREAM OUTPUT ---------------------------\n");
                 Console.ForegroundColor = ConsoleColor.White;
 
                 instance = @static ? null : Activator.CreateInstance(@class, true);
-                @return = member.Invoke(instance, cparameters);
+
+                if (constructor)
+                    @return = cmember.Invoke(cparameters);
+                else
+                    @return = member.Invoke(instance, cparameters);
             }
             catch (Exception ex)
             {
                 Console.ForegroundColor = ConsoleColor.Gray;
-                Console.WriteLine("-------------------------------- ERROR ---------------------------------");
+                Console.WriteLine("\n-------------------------------- ERROR ---------------------------------");
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("An error occured:");
                 Console.ForegroundColor = ConsoleColor.Yellow;
@@ -480,42 +502,73 @@ namespace RunDLL
             #endregion
             #region PRINT RETURN VALUE
 
-            Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("----------------------------- RETURN VALUE -----------------------------");
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine("\n{0}:", member.ReturnType.GetCPPTypeString());
+            if (!(constructor && @static))
+            {
+                Console.ForegroundColor = ConsoleColor.Gray;
 
-            if (@return == null)
-                Console.WriteLine("nullptr");
-            else if (member.ReturnType.IsSerializable)
-                try
-                {
-                    Console.WriteLine(new JavaScriptSerializer().Serialize(@return));
-                }
-                catch
-                {
-                    int depth = 1;
+                if (constructor)
+                    Console.WriteLine("\n---------------------------- OBJECT INSTANCE ---------------------------");
+                else
+                    Console.WriteLine("\n----------------------------- RETURN VALUE -----------------------------");
 
-                    try 
-	                {	        
-		                depth = (from argv in args
-                                 let targv = argv.Trim().ToLower()
-                                 where targv.StartsWith("--depth") ||
-                                         targv.StartsWith("-d")
-                                 select int.Parse(Regex.Match(targv, @"^\s*(\-\-depth|\-d)(?<value>[1-7])\s*$").Groups["value"].ToString())).Max();
-	                } catch { }
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("\n{0}:", (constructor ? @class : member.ReturnType).GetCPPTypeString());
 
-                    Console.WriteLine(@return.var_dump(depth:depth));
-                }
-            else
-                Console.WriteLine(@return);
+                if (@return == null)
+                    Console.WriteLine("nullptr");
+                else if ((constructor ? @class : member.ReturnType).IsSerializable)
+                    try
+                    {
+                        Console.WriteLine(Serialization.FormatJSON(new JavaScriptSerializer().Serialize(@return)));
+                    }
+                    catch
+                    {
+                        int depth = 1;
+
+                        try
+                        {
+                            depth = (from argv in args
+                                     let targv = argv.Trim().ToLower()
+                                     where targv.StartsWith("--depth") ||
+                                           targv.StartsWith("-d")
+                                     select int.Parse(Regex.Match(targv, @"^\s*(\-\-depth|\-d)(?<value>[1-7])\s*$").Groups["value"].ToString())).Max();
+                        }
+                        catch { }
+
+                        Console.WriteLine(@return.var_dump(depth: depth));
+                    }
+                else
+                    Console.WriteLine(@return);
+            }
+
+            Console.WriteLine("\n------------------------------------------------------------------------\n");
 
             #endregion
 
             return 0;
         }
 
-        private static bool ParseType(string argv, Type type, out dynamic param)
+        public static bool CheckForOption(IEnumerable<string> args, string @long, string @short)
+        {
+            @long = "--" + @long.ToLower();
+            @short = "-" + @short.ToLower();
+
+            return (from argv in args
+                    let targv = argv.Trim().ToLower()
+                    where targv == @long ||
+                          targv == @short
+                    select false).Count() > 0;
+        }
+
+        public static string[] RegArguments(this IEnumerable<string> args)
+        {
+            return (from a in args
+                    let ta = a.Trim()
+                    where !Regex.Match(ta, @"^(\/\?|\-\-?[a-z][0-9a-z\-_]*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase).Success
+                    select a).ToArray();
+        }
+
+        public static bool ParseType(string argv, Type type, out dynamic param)
         {
             bool isnum = false;
             bool isflt = false;
@@ -604,6 +657,11 @@ namespace RunDLL
                             return null;
                         }
                     })
+                    .Case<Type>(_ => {
+                        m = REGEX_TYPE.Match(argv);
+
+                        return FetchType(m.Groups["namespace"].ToString(), m.Groups["class"].ToString());
+                    })
                     // ANY OTHER CASES
                     [type, null];
 
@@ -644,6 +702,9 @@ with the following parameters:
     method    - Either a fully qualified namespace, class and method signature
                 or the name of the class (if unique) followed by the unique
                 method name (or optinal parameters to identify the method).
+                Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to
+                address the type's instance  constructor, static constructor
+                or destructor.
     arguments - An optional list of arguments (separated by commas without any
                 whitespace), which will be passed as method parameters to the
                 given method. A serilaized XML- or JSON-string can be passed
@@ -665,8 +726,8 @@ The following options are also defined:
                 
 Valid usage examples are:
     {0} mscorlib.dll System.IntPtr.Size --depth2
-    {0} /root/Documents/library.olb new ImgLib.Image.Rotate()
-    {0} \\127.0.0.1\app.exe new MainWindow::.ctor(string) ""foobar"" --stdlib
+    {0} /root/Documents/library.olb new ImgLib::Image::Rotate()
+    {0} \\127.0.0.1\app.exe new MainWindow.//ctor(string) ""foobar"" --stdlib
 ".TrimEnd(), modname, nfo.Name);
                 string[] lines = helpstr.Split('\n');
 
@@ -692,6 +753,15 @@ Valid usage examples are:
 
         public static Type FetchType(string @namespace, string @class)
         {
+            if ((@namespace.Trim().Length + @class.Trim().Length) == 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("The empty string is not a valid type name.");
+                Console.ForegroundColor = ConsoleColor.White;
+
+                return null;
+            }
+
             if (string.IsNullOrWhiteSpace(@namespace))
                 if (PRIMITIVES.ContainsKey(@class))
                 {
@@ -734,8 +804,22 @@ Valid usage examples are:
                     Console.ForegroundColor = ConsoleColor.Yellow;
                     Console.WriteLine("However, the following types have been found, which partly match the given type name:");
 
-                    foreach (Type t in oclasses)
+                    int oclen = oclasses.Count();
+                    const int ocmaxlen = 24;
+
+                    foreach (Type t in oclasses.Take(ocmaxlen))
                         Console.WriteLine("    {0}", t.FullName);
+
+                    if (oclen > ocmaxlen)
+                    {
+                        oclen -= ocmaxlen;
+
+                        Console.WriteLine("{0} more entries follow. Do you want to show them? (y/N)");
+
+                        if (char.ToLower(Console.ReadKey(true).KeyChar) == 'y')
+                            foreach (Type t in oclasses.Skip(ocmaxlen))
+                                Console.WriteLine("    {0}", t.FullName);
+                    }
 
                     Console.ForegroundColor = ConsoleColor.White;
                 }
@@ -758,7 +842,59 @@ Valid usage examples are:
             return null;
         }
 
-        public static MethodInfo FetchMethod(Type tp, string name, bool isprop, params string[] parameters)
+        public static Tuple<Type, ParameterAttributes> InternalFetchParameter(string p)
+        {
+            ParameterAttributes pa = default(ParameterAttributes);
+            string _p = p;
+
+            Match m = Regex.Match(p, @"^(\&\s*|ref\s+)", RegexOptions.IgnoreCase);
+
+            if (m.Success)
+            {
+                pa |= ParameterAttributes.In | ParameterAttributes.Out;
+                _p = p.Remove(m.Index, m.Length);
+            }
+            else if ((m = Regex.Match(p, @"^out\s+", RegexOptions.IgnoreCase)).Success)
+            {
+                pa |= ParameterAttributes.Out;
+                _p = p.Remove(m.Index, m.Length);
+            }
+            else if ((m = Regex.Match(p, @"^in\s+", RegexOptions.IgnoreCase)).Success)
+            {
+                pa |= ParameterAttributes.In;
+                _p = p.Remove(m.Index, m.Length);
+            }
+
+            if ((m = Regex.Match(_p, @"(\s*\[\s*\,*\s*\]\s*)+$")).Success)
+            {
+                _p = _p.Remove(m.Index, m.Length);
+
+                string brackets = m.ToString().Replace(" ", "");
+
+
+                // TODO : ANALYZE BRACKETS AND CREATE ARRAY TYPE
+            }
+            if ((m = Regex.Match(_p, @"(\s*\**\s*)+$")).Success)
+            {
+                _p = _p.Remove(m.Index, m.Length);
+
+                int ptrdepth = m.ToString().Replace(" ", "").Length;
+
+
+                // TODO : ANALYZE POINTER DEPTH AND CREATE POINTER TYPE
+            }
+
+            // var @ref = new CodeTypeReference("System.Collections.Generic.IEnumerable<System.Reflection.MethodInfo>[][][]");
+
+            Type t = FetchType("", _p);
+
+            if (t == null)
+                return null;
+            else
+                return new Tuple<Type, ParameterAttributes>(t, pa);
+        }
+
+        public static MethodInfo MatchOnParameters(Type tp, string name, bool isprop, params string[] parameters)
         {
             MethodInfo[] members = tp.GetMethods((BindingFlags)0x01063f7f);
             IEnumerable<MethodInfo> match = from m in members
@@ -771,82 +907,37 @@ Valid usage examples are:
                     return match.First();
                 else
                 {
+                    Tuple<Type, ParameterAttributes> res;
+
                     if (!isprop)
                         foreach (string p in parameters)
-                        {
-                            ParameterAttributes pa = default(ParameterAttributes);
-                            string _p = p;
-
-                            Match m = Regex.Match(p, @"^(\&\s*|ref\s+)", RegexOptions.IgnoreCase);
-
-                            if (m.Success)
-                            {
-                                pa |= ParameterAttributes.In | ParameterAttributes.Out;
-                                _p = p.Remove(m.Index, m.Length);
-                            }
-                            else if ((m = Regex.Match(p, @"^out\s+", RegexOptions.IgnoreCase)).Success)
-                            {
-                                pa |= ParameterAttributes.Out;
-                                _p = p.Remove(m.Index, m.Length);
-                            }
-                            else if ((m = Regex.Match(p, @"^in\s+", RegexOptions.IgnoreCase)).Success)
-                            {
-                                pa |= ParameterAttributes.In;
-                                _p = p.Remove(m.Index, m.Length);
-                            }
-
-                            if ((m = Regex.Match(_p, @"(\s*\[\s*\,*\s*\]\s*)+$")).Success)
-                            {
-                                _p = _p.Remove(m.Index, m.Length);
-
-                                string brackets = m.ToString().Replace(" ", "");
-
-
-                                // TODO : ANALYZE BRACKETS AND CREATE ARRAY TYPE
-                            }
-                            if ((m = Regex.Match(_p, @"(\s*\**\s*)+$")).Success)
-                            {
-                                _p = _p.Remove(m.Index, m.Length);
-
-                                int ptrdepth = m.ToString().Replace(" ", "").Length;
-
-
-                                // TODO : ANALYZE POINTER DEPTH AND CREATE POINTER TYPE
-                            }
-                        
-                            Type t = FetchType("", _p);
-
-                            // var @ref = new CodeTypeReference("System.Collections.Generic.IEnumerable<System.Reflection.MethodInfo>[][][]");
-
-
-                            if (t == null)
+                            if ((res = InternalFetchParameter(p)) == null)
                                 return null;
                             else
-                                paramtypes.Add(new Tuple<Type, ParameterAttributes>(t, pa));
-                        }
+                                paramtypes.Add(res);
 
-                     match = isprop ? from m in match
-                                      where true // TODO : PROPERTIES
-                                      select m
-                                    : from m in match
-                                      let margs = from p in m.GetParameters()
-                                                  select new Tuple<Type, ParameterAttributes>(p.ParameterType, p.Attributes & (ParameterAttributes.In | ParameterAttributes.Out))
-                                      where new Func<bool>(() => {
-                                          var ma = margs.ToArray();
-                                          var pa = paramtypes.ToArray();
+                    match = isprop ? from m in match
+                                     where true // TODO : PROPERTIES
+                                     select m
+                                   : from m in match
+                                     let margs = from p in m.GetParameters()
+                                                 select new Tuple<Type, ParameterAttributes>(p.ParameterType, p.Attributes & (ParameterAttributes.In | ParameterAttributes.Out))
+                                     where new Func<bool>(() => {
+                                         var ma = margs.ToArray();
+                                         var pa = paramtypes.ToArray();
 
-                                          if (ma.Length != pa.Length)
-                                              return false;
+                                         if (ma.Length != pa.Length)
+                                             return false;
 
-                                          for (int i = 0; i < ma.Length; i++)
-                                              if (ma[i].Item2 != pa[i].Item2)
-                                                  return false;
-                                              else if (ma[i].Item1.FullName != pa[i].Item1.FullName)
-                                                  return false;
+                                         for (int i = 0; i < ma.Length; i++)
+                                             if (ma[i].Item2 != pa[i].Item2)
+                                                 return false;
+                                             else if (ma[i].Item1.FullName != pa[i].Item1.FullName)
+                                                 return false;
 
-                                          return true;
-                                      })()
-                                      select m;
+                                         return true;
+                                     })()
+                                     select m;
 
                     if (match.Count() == 0)
                     {
@@ -877,8 +968,123 @@ Valid usage examples are:
 
             return null;
         }
+
+        public static string MemberName(object member, bool constructor)
+        {
+            if (constructor)
+                return (member as MethodBase).DeclaringType.GetCPPTypeString() + ((member as MethodBase).IsStatic ? "::.cctor" : "::.ctor");
+            else
+                return (member as MethodInfo).GetCPPSignature();
+        }
+
+        public static dynamic FetchMethod(Type tp, string name, bool isprop, ref bool @static, out bool constructor, params string[] parameters)
+        {
+            constructor = false;
+
+            if (Regex.Match(name, @"^\/\/\w+$").Success)
+            {
+                name = name.Remove(0, 2).ToLower();
+
+                ConstructorInfo[] nfos;
+
+                if ((name == "ctor"))
+                    nfos = tp.GetConstructors((BindingFlags)0x01063f7f);
+                else if (name == "dtor")
+                {
+                    MethodInfo nfo = tp.GetMethod("Finalize", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+
+                    if (nfo == null)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("The type `{1}::{0}` has no destructor method defined.", tp.GetCPPTypeString(), asmname.Name);
+                        Console.ForegroundColor = ConsoleColor.White;
+                    }
+
+                    if (@static)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("The keyword `new` is missing.");
+                        Console.ForegroundColor = ConsoleColor.White;
+
+                        @static = false;
+                    }
+
+                    return nfo;
+                }
+                else if (name == "cctor")
+                {
+                    ConstructorInfo nfo = tp.GetConstructors(BindingFlags.Static).FirstOrDefault();
+
+                    if (nfo == null)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("The type `{1}::{0}` has no static constructor method defined.", tp.GetCPPTypeString(), asmname.Name);
+                        Console.ForegroundColor = ConsoleColor.White;
+
+                        return null;
+                    }
+                    else
+                    {
+                        if (!@static)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine("The keyword `new` has been ignored, as the requested method is a static one.");
+                            Console.ForegroundColor = ConsoleColor.White;
+
+                            @static = true;
+                        }
+
+                        constructor = true;
+
+                        return nfo;
+                    }
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("The given member name `...//{0}` is not valid.{1}", name, helpstr);
+                    Console.ForegroundColor = ConsoleColor.White;
+
+                    return null;
+                }
+
+                constructor = true;
+
+                if (nfos.Length == 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("The type `{1}::{0}` has no constructor method(s) defined.", tp.GetCPPTypeString(), asmname.Name);
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+                else
+                {
+                    if (@static)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("The keyword `new` is missing.");
+                        Console.ForegroundColor = ConsoleColor.White;
+
+                        @static = false;
+                    }
+
+                    if (nfos.Length == 1)
+                        return nfos[0];
+                    else
+                    {
+
+
+
+                    }
+                }
+
+                return null;
+            }
+            else
+                return MatchOnParameters(tp, name, isprop, parameters);
+        }
     }
 
+    [Serializable]
     public class Signature
     {
         public string Class { get; set; }

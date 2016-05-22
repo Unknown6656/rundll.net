@@ -1,11 +1,9 @@
-﻿+ Add support for .ctor / .cctor
+﻿+ Match pattern on different .ctors
 + Match on properties
 + Add custom assemblies
 + Add pointer creation without the need of a fixed address
 + Add argument pointer analyzation
-+ Add argument array analyzation
 + Add argument generic/nested analyzation
 + Throw error if parameter type could not be found in assemblies
-* warning when using static functions with  `new`
 * Add other TypePattern cases
-* Add more core assemblies
+* Add more core assemblies (security, webextensions ?)
