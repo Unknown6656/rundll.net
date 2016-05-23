@@ -84,6 +84,12 @@ namespace RunDLL
         /// <returns>Application exit code</returns>
         public static int Main(string[] args)
         {
+            typeof(Assembly).GetMethod("GetReferencedAssemblies").WarmUp();
+
+            foreach (MethodInfo nfo in typeof(IEnumerable<>).GetMethods())
+                if (!nfo.IsAbstract)
+                    nfo.WarmUp();
+
             int retcode = InnerMain(args);
 
             if (Debugger.IsAttached)
@@ -92,26 +98,20 @@ namespace RunDLL
             return retcode;
         }
 
-        private static int InnerMain(string[] args)
+        /// <summary>
+        /// The application's main method
+        /// </summary>
+        /// <param name="args">Command line arguments</param>
+        /// <returns>Application exit code</returns>
+        public static int InnerMain(string[] args)
         {
-            #region WARMUP / PREJIT
-
-            typeof(Assembly).GetMethod("GetReferencedAssemblies").WarmUp();
-
-            foreach (MethodInfo nfo in typeof(IEnumerable<>).GetMethods())
-                if (!nfo.IsAbstract)
-                    nfo.WarmUp();
-
-            #endregion
             #region HELP AND BASIC ARGUMENT CHECKS
 
-            if (CheckHelp(args))
+            if (DisplayHelp(args))
                 return 0;
             else if (args.RegArguments().Length < 2)
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Invalid argument count.{0}", helpstr);
-                Console.ForegroundColor = ConsoleColor.White;
+                _err("Invalid argument count.{0}", helpstr);
 
                 return 0;
             }
@@ -122,13 +122,7 @@ namespace RunDLL
             targnfo = new FileInfo(args[0]);
 
             if (!targnfo.Exists)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("The file `{0}` could not not be found.", targnfo);
-                Console.ForegroundColor = ConsoleColor.White;
-
-                return 0;
-            }
+                return _err("The file `{0}` could not not be found.", targnfo);
 
             try
             {
@@ -140,11 +134,7 @@ namespace RunDLL
                 }
                 catch
                 {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("The file `{0}` does not seem to contain a valid PE/COFF header.", targnfo);
-                    Console.ForegroundColor = ConsoleColor.White;
-
-                    return 0;
+                    return _err("The file `{0}` does not seem to contain a valid PE/COFF header.", targnfo);
                 }
 
                 targasm = Assembly.LoadFrom(targnfo.FullName);
@@ -231,11 +221,7 @@ namespace RunDLL
             
             if (!@static)
                 if (args.Length < 3)
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("Missing method signature.{0}", helpstr);
-                    Console.ForegroundColor = ConsoleColor.White;
-                }
+                    return _err("Missing method signature.{0}", helpstr);
                 else
                     method = args[2];
 
@@ -254,13 +240,7 @@ namespace RunDLL
                 sig.IsProperty = !reg.Groups["parameters"].Success;
             }
             else
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Invalid method name format `{1}`.{0}", helpstr, method);
-                Console.ForegroundColor = ConsoleColor.White;
-
-                return 0;
-            }
+                return _err("Invalid method name format `{1}`.{0}", helpstr, method);
 
             #endregion
             #region LOAD CLASS + MEMBER
@@ -289,6 +269,25 @@ namespace RunDLL
             if (CheckForOption(args, "uclib", "u"))
                 asms.Add(Assembly.LoadFrom("uclib.dll"));
 
+            asms.AddRange(from string argv in args
+                          let targv = argv.ToLower().Trim()
+                          where targv.StartsWith("--extlib:") || targv.StartsWith("-e:")
+                          let tasm = new Func<Assembly>(delegate {
+                              string loc = targv.Remove(0, targv.IndexOf(':') + 1).Trim();
+
+                              try
+                              {
+                                  return Assembly.LoadFrom(loc);
+                              }
+                              catch
+                              {
+                                  _err("The external assembly `{0}` could not be loaded and has therefore been ignored.", loc);
+
+                                  return null;
+                              }
+                          }).Invoke()
+                          where tasm != null
+                          select tasm);
             asms.AddRange(from string s in new string[] { /* TODO: ADD MORE ASSEMBLIES HERE */ } select Assembly.LoadFrom(s));
 
             IEnumerable<AssemblyName> asmnames = (from _ in asms select _.GetReferencedAssemblies().Union(new AssemblyName[] { _.GetName() }))
@@ -310,9 +309,7 @@ namespace RunDLL
             if (@class == null)
                 return 0;
 
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("Type `{0}` loaded from `{1}`.", @class.FullName, asmname.Name);
-            Console.ForegroundColor = ConsoleColor.White;
+            _ok("Type `{0}` loaded from `{1}`.", @class.FullName, asmname.Name);
 
             bool constructor;
             object result = FetchMethod(@class, sig.Member, sig.IsProperty, ref @static, out constructor, sig.Arguments);
@@ -326,9 +323,7 @@ namespace RunDLL
             else
                 cmember = result as ConstructorInfo;
 
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("Member `{0}` loaded from `{1}`.", MemberName(result, constructor), asmname.Name);
-            Console.ForegroundColor = ConsoleColor.White;
+            _ok("Member `{0}` loaded from `{1}`.", MemberName(result, constructor), asmname.Name);
 
             #endregion
             #region PARSE ARGUMENTS
@@ -353,11 +348,7 @@ namespace RunDLL
                     }
                     catch
                     {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The given string does not seem to be a valid XML string.{0}", helpstr);
-                        Console.ForegroundColor = ConsoleColor.White;
-
-                        return 0;
+                        return _err("The given string does not seem to be a valid XML string.{0}", helpstr);
                     }
                 else if ((m = Regex.Match(argv, @"^\@xml\:\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
                     try
@@ -371,20 +362,12 @@ namespace RunDLL
                         }
                         catch
                         {
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine("The given string does not seem to be a valid XML string.{0}", helpstr);
-                            Console.ForegroundColor = ConsoleColor.White;
-
-                            return 0;
+                            return _err("The given string does not seem to be a valid XML string.{0}", helpstr);
                         }
                     }
                     catch
                     {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The file `{0}` could not be found or accessed.", xml);
-                        Console.ForegroundColor = ConsoleColor.White;
-
-                        return 0;
+                        return _err("The file `{0}` could not be found or accessed.", xml);
                     }
                 else if ((m = Regex.Match(argv, @"^\@json\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
                     try
@@ -395,11 +378,7 @@ namespace RunDLL
                     }
                     catch
                     {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The given string does not seem to be a valid JSON string.{0}", helpstr);
-                        Console.ForegroundColor = ConsoleColor.White;
-
-                        return 0;
+                        return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
                     }
                 else if ((m = Regex.Match(argv, @"^\@json\:\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
                     try
@@ -412,32 +391,18 @@ namespace RunDLL
                         }
                         catch
                         {
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine("The file `{0}` could not be found or accessed.", xml);
-                            Console.ForegroundColor = ConsoleColor.White;
-
-                            return 0;
+                            return _err("The file `{0}` could not be found or accessed.", xml);
                         }
 
                         param = Serialization.DeserializeJSON(xml, pnfo.ParameterType);
                     }
                     catch
                     {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The given string does not seem to be a valid JSON string.{0}", helpstr);
-                        Console.ForegroundColor = ConsoleColor.White;
-
-                        return 0;
+                        return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
                     }
                 else
-                    if (!ParseType(argv, pnfo.ParameterType, out param))
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The given argument `{0}` could not be interpreted as `{1}`.", argv.Trim(), pnfo.ParameterType.GetCPPTypeString());
-                        Console.ForegroundColor = ConsoleColor.White;
-
-                        return 0;
-                    }
+                    if (!ParseParamter(argv, pnfo.ParameterType, out param))
+                        return _err("The given argument `{0}` could not be interpreted as `{1}`.", argv.Trim(), pnfo.ParameterType.GetCPPTypeString());
                     else
                         parameters.Add(param);
             }
@@ -450,26 +415,16 @@ namespace RunDLL
             ParameterInfo[] pnfos = (constructor ? cmember.GetParameters() : member.GetParameters());
 
             if (cparameters.Length < pnfos.Length)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("Parameter count mismatch: The method `{0}` requires {1} parameter(s), but only {2} were given.", MemberName(result, constructor), pnfos.Length, cparameters.Length);
-                Console.ForegroundColor = ConsoleColor.White;
-
-                return 0;
-            }
+                return _err("Parameter count mismatch: The method `{0}` requires {1} parameter(s), but only {2} were given.", MemberName(result, constructor), pnfos.Length, cparameters.Length);
 
             for (int i = 0, l = pnfos.Length; i < l; i++)
                 try
                 {
                     cparameters[i] = Convert.ChangeType(parameters[i], pnfos[i].ParameterType);
                 }
-                catch (Exception)
+                catch
                 {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("The given argument `{0}` could not be cast as `{1}`.", parameters[i], pnfos[i].ParameterType.GetCPPTypeString());
-                    Console.ForegroundColor = ConsoleColor.White;
-
-                    return 0;
+                    return _err("The given argument `{0}` could not be cast as `{1}`.", parameters[i], pnfos[i].ParameterType.GetCPPTypeString());
                 }
 
             try
@@ -544,10 +499,124 @@ namespace RunDLL
             Console.WriteLine("\n------------------------------------------------------------------------\n");
 
             #endregion
+            #region GC COLLECTION
+
+            try
+            {
+                if (@return is GCHandle)
+                    ((GCHandle)@return).Free();
+            } catch { }
+
+            try
+            {
+                if (@return is IDisposable)
+                    (@return as IDisposable).Dispose();
+            } catch { }
+
+            @return = null;
+
+            GC.Collect();
+
+            #endregion
 
             return 0;
         }
 
+        /// <summary>
+        /// Displays the help page on demand
+        /// </summary>
+        /// <param name="args">Command line arguments</param>
+        /// <returns>Return value, which indicates, whether the help page has been shown</returns>
+        public static bool DisplayHelp(string[] args)
+        {
+            if (args.Length == 0 || (from arg in args
+                                     let targ = arg.ToLower().Trim()
+                                     where targ == "--help" ||
+                                           targ == "-h" ||
+                                           targ == "/?" ||
+                                           targ == "-?" 
+                                     select true).Count() > 0)
+            {
+                string helpstr = string.Format(Properties.Resources.PrintedHeader.Replace("{0}", "{1}") + @"
+This application allows the execution of static and instance functions inside
+compiled .NET-assemblies, e.g. inside static and dynamic libraries or controls
+(aka .dll, .module, .tlb, .olb, .ocx, .exe, ...). All method I/O-stream output
+will be redirected to the current console host (if not otherwise instructed
+inside the called method).
+
+The usage is defined as follows:
+    {0} <library> ['new'] <method> [arguments, ...]
+
+with the following parameters:
+    libaray   - The .NET assembly file name or path
+    'new'     - The 'new'-keyword is optional, but must be passed if the
+                method in question is not a static one (without the quotes).
+    method    - Either a fully qualified namespace, class and method signature
+                or the name of the class (if unique) followed by the unique
+                method name (or optinal parameters to identify the method).
+                Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to
+                address the type's instance  constructor, static constructor
+                or destructor.
+    arguments - An optional list of arguments (separated by commas without any
+                whitespace), which will be passed as method parameters to the
+                given method. A serilaized XML- or JSON-string can be passed
+                with @XML:""...."" or @JSON:""...."", where .... is the XML-
+                or JSON-string in question. If the parameter shall bede seria-
+                lized from a JSON- or XML-file, the argument shall be passed
+                as @JSON::""...."" or @XML::""...."", where .... represents
+                the path to the given JSON- or XML-file.
+
+The following options are also defined:
+    -d_, --depth_  - Sets the return value print depth (the symbol `_` must be
+                     a positive integer value between 1 and 7).
+    -v, --verbose  - Prints verbose information about the loaded assembly.
+    -s, --stdlib   - Includes the .NET standard libraries (`System.Data`
+                     `System` and `System.Core`).
+                     Note: The library `mscorlib` is always included.
+    -w, --wpflib   - Includes the .NET WPF (Windows Presentation Framework)
+                     libraries (`System.Xaml.dll``PresentationCore.dll`,
+                     `WindowsBase.dll`, `PresentationFramework.dll` and
+                     `WindowsFormsIntegration.dll`).
+    -u, --uclib    - Includes the .NET Unknown6656 core library `uclib`
+    -e:, --extlib: - Includes the given .NET library and loads its types. The
+                     assembly's file path must be given directly after the
+                     colon (`:`). This option can be given multiple times.
+    -h, --help     - Displays this help page.
+                
+Valid usage examples are:
+    {0} mscorlib.dll System.IntPtr.Size --depth2
+    {0} /root/Documents/library.olb new ImgLib::Image::Rotate()
+    {0} \\127.0.0.1\app.exe new MainWindow.//ctor(string) ""foobar"" --stdlib
+".TrimEnd(), modname, nfo.Name);
+                string[] lines = helpstr.Split('\n');
+
+                if (Console.WindowHeight < lines.Length + 1)
+                    Console.WindowHeight = lines.Length + 2;
+                if (Console.WindowWidth < lines.Max(x => x.Length + 1))
+                    Console.WindowWidth = lines.Max(x => x.Length + 2);
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                ConsoleExtensions.AdvancedAnimatedWriteLine(helpstr, 2f);
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.White;
+
+                return true;
+            }
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine(Properties.Resources.PrintedHeader, nfo.Name);
+            Console.WriteLine("Arguments: {0}", string.Join(" ", args));
+
+            return false;
+        }
+
+        /// <summary>
+        /// Checks the given argument enumeration for the given short and long option
+        /// </summary>
+        /// <param name="args">Argument enumeration</param>
+        /// <param name="long">Long argument (without `--`)</param>
+        /// <param name="short">Short argument (without `-`)</param>
+        /// <returns>Check result</returns>
         public static bool CheckForOption(IEnumerable<string> args, string @long, string @short)
         {
             @long = "--" + @long.ToLower();
@@ -560,6 +629,11 @@ namespace RunDLL
                     select false).Count() > 0;
         }
 
+        /// <summary>
+        /// Ignores all option arguments and returns the non-option ones
+        /// </summary>
+        /// <param name="args">Argument enumeration</param>
+        /// <returns>Non-option arguments</returns>
         public static string[] RegArguments(this IEnumerable<string> args)
         {
             return (from a in args
@@ -568,7 +642,101 @@ namespace RunDLL
                     select a).ToArray();
         }
 
-        public static bool ParseType(string argv, Type type, out dynamic param)
+        /// <summary>
+        /// Fetches a type based on the namespace and typename
+        /// </summary>
+        /// <param name="namespace">Namespace name</param>
+        /// <param name="class">Type name</param>
+        /// <returns>Type</returns>
+        public static Type FetchType(string @namespace, string @class)
+        {
+            if ((@namespace.Trim().Length + @class.Trim().Length) == 0)
+                return _err("The empty string is not a valid type name.").NULL() as Type;
+
+            if (string.IsNullOrWhiteSpace(@namespace))
+                if (PRIMITIVES.ContainsKey(@class))
+                {
+                    Tuple<string, string> name = PRIMITIVES[@class];
+
+                    @namespace = name.Item1;
+                    @class = name.Item2;
+                }
+                else if (@class.Contains('.'))
+                {
+                    @namespace = @class.Remove(@class.LastIndexOf('.'));
+                    @class = @class.Remove(0, @class.LastIndexOf('.') + 1);
+                }
+
+            string __fclassnamenrm = @namespace + (@namespace.Length > 0 ? "." : "") + @class;
+            string __fclassnamelwr = __fclassnamenrm.ToLower();
+            IEnumerable<Type> classes = from Type t in alltypes
+                                        where t.FullName.ToLower().EndsWith(__fclassnamelwr)
+                                        select t;
+
+            if (classes.Count() == 0)
+                _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm, asmname.Name, asmname.Version);
+            else if (classes.Count() > 1)
+            {
+                IEnumerable<Type> oclasses = classes;
+
+                classes = from Type t in alltypes
+                          where t.Name == @class
+                          where t.Namespace == @namespace
+                          select t;
+
+                if (classes.Count() == 0)
+                {
+                    _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm, asmname.Name, asmname.Version);
+
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine("However, the following types have been found, which partly match the given type name:");
+
+                    int oclen = oclasses.Count();
+                    const int ocmaxlen = 24;
+
+                    foreach (Type t in oclasses.Take(ocmaxlen))
+                        Console.WriteLine("    {0}", t.FullName);
+
+                    if (oclen > ocmaxlen)
+                    {
+                        oclen -= ocmaxlen;
+
+                        Console.WriteLine("{0} more entries follow. Do you want to show them? (y/N)", oclen);
+
+                        if (char.ToLower(Console.ReadKey(false).KeyChar) == 'y')
+                            foreach (Type t in oclasses.Skip(ocmaxlen))
+                                Console.WriteLine("    {0}", t.FullName);
+                    }
+
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+                else if (classes.Count() > 1)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("The type `{0}` could not be determined, as it is not unique:");
+
+                    foreach (Type t in classes)
+                        Console.WriteLine("    [{1}]{0}", t.FullName, t.Assembly.CodeBase);
+
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+                else
+                    return classes.First();
+            }
+            else
+                return classes.First();
+
+            return null;
+        }
+
+        /// <summary>
+        /// Parses the given parameter based on the given type and returns the parsing result
+        /// </summary>
+        /// <param name="argv">Parameter representation</param>
+        /// <param name="type">Parameter type</param>
+        /// <param name="param">Parsed parameter value</param>
+        /// <returns>Indicates, whether the parsing was successfull</returns>
+        public static bool ParseParamter(string argv, Type type, out dynamic param)
         {
             bool isnum = false;
             bool isflt = false;
@@ -576,13 +744,15 @@ namespace RunDLL
 
             try
             {
-                if ((m = Regex.Match(argv, @"^\s*(?<sign>\+|\-)?\s*(0x(?<value>[0-9a-f]+)h?|(0x)?(?<value>[0-9a-f]+)h)\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
+                if ((m = Regex.Match(argv, @"^\s*(?<sign>\+|\-)?\s*(0x(?<value>[0-9a-f]+)h?)\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
                 {
                     ulong ul = ulong.Parse(m.Groups["value"].ToString(), NumberStyles.HexNumber | NumberStyles.AllowHexSpecifier);
 
                     argv = (m.Groups["sign"].ToString().Contains('-') ? "-" : "") + ul;
                     isnum = true;
                 }
+                    // TODO : ADD OTHER BASES
+
                 else if ((m = Regex.Match(argv, @"^\s*(?<sign>\+|\-)?\s*(?<value>[0-9]*(\.|\,)?[0-9]+([e][\-\+]?[0-9]+)?)(d|f|m)?\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
                 {
                     decimal dec = decimal.Parse(m.Groups["value"].ToString().Replace('.', ','));
@@ -624,7 +794,7 @@ namespace RunDLL
                             {
                                 object elem;
 
-                                if (ParseType(s, t, out elem))
+                                if (ParseParamter(s, t, out elem))
                                     obj.Add(elem);
                                 else
                                     throw null;
@@ -640,7 +810,7 @@ namespace RunDLL
 
                         if ((argv = argv.Trim()).StartsWith("&"))
                         {
-                            ParseType(argv.Remove(0, 1), typeof(long), out v);
+                            ParseParamter(argv.Remove(0, 1), typeof(long), out v);
 
                             return Pointer.Box((long*)(long)v, T);
                         }
@@ -648,11 +818,17 @@ namespace RunDLL
                         {
                             Type t = T.GetElementType();
 
-                            ParseType(argv, t, out v);
+                            ParseParamter(argv, t, out v);
+
+                            if (t.IsValueType)
+                            {
+
+                                // TODO : CREATE POINTER
 
 
-                            // TODO : CREATE POINTER
-
+                            }
+                            else
+                                v = GCHandle.Alloc(v);
 
                             return null;
                         }
@@ -675,174 +851,7 @@ namespace RunDLL
             }
         }
 
-        public static bool CheckHelp(string[] args)
-        {
-            if (args.Length == 0 || (from arg in args
-                                     let targ = arg.ToLower().Trim()
-                                     where targ == "--help" ||
-                                           targ == "-h" ||
-                                           targ == "/?" ||
-                                           targ == "-?" 
-                                     select true).Count() > 0)
-            {
-                string helpstr = string.Format(Properties.Resources.PrintedHeader.Replace("{0}", "{1}") + @"
-This application allows the execution of static and instance functions inside
-compiled .NET-assemblies, e.g. inside static and dynamic libraries or controls
-(aka .dll, .module, .tlb, .olb, .ocx, .exe, ...). All method I/O-stream output
-will be redirected to the current console host (if not otherwise instructed
-inside the called method).
-
-The usage is defined as follows:
-    {0} <library> ['new'] <method> [arguments, ...]
-
-with the following parameters:
-    libaray   - The .NET assembly file name or path
-    'new'     - The 'new'-keyword is optional, but must be passed if the
-                method in question is not a static one (without the quotes).
-    method    - Either a fully qualified namespace, class and method signature
-                or the name of the class (if unique) followed by the unique
-                method name (or optinal parameters to identify the method).
-                Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to
-                address the type's instance  constructor, static constructor
-                or destructor.
-    arguments - An optional list of arguments (separated by commas without any
-                whitespace), which will be passed as method parameters to the
-                given method. A serilaized XML- or JSON-string can be passed
-                with @XML:""...."" or @JSON:""...."", where .... is the XML-
-                or JSON-string in question. If the parameter shall bede seria-
-                lized from a JSON- or XML-file, the argument shall be passed
-                as @JSON::""...."" or @XML::""...."", where .... represents
-                the path to the given JSON- or XML-file.
-
-The following options are also defined:
-    -d_, --depth_ - Sets the return value print depth (the symbol `_` must be
-                    a positive integer value between 1 and 7).
-    -v, --verbose - Prints verbose information about the loaded assembly.
-    -s, --stdlib  - Includes the .NET standard libraries (`System.Data`
-                    `System` and `System.Core`).
-                    Note: The library `mscorlib` is always included.
-    -u, --uclib   - Includes the .NET library `uclib`
-    -h, --help    - Displays this help page.
-                
-Valid usage examples are:
-    {0} mscorlib.dll System.IntPtr.Size --depth2
-    {0} /root/Documents/library.olb new ImgLib::Image::Rotate()
-    {0} \\127.0.0.1\app.exe new MainWindow.//ctor(string) ""foobar"" --stdlib
-".TrimEnd(), modname, nfo.Name);
-                string[] lines = helpstr.Split('\n');
-
-                if (Console.WindowHeight < lines.Length + 1)
-                    Console.WindowHeight = lines.Length + 2;
-                if (Console.WindowWidth < lines.Max(x => x.Length + 1))
-                    Console.WindowWidth = lines.Max(x => x.Length + 2);
-
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                ConsoleExtensions.AdvancedAnimatedWriteLine(helpstr, 2f);
-                Console.WriteLine();
-                Console.ForegroundColor = ConsoleColor.White;
-
-                return true;
-            }
-
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine(Properties.Resources.PrintedHeader, nfo.Name);
-            Console.WriteLine("Arguments: {0}", string.Join(" ", args));
-
-            return false;
-        }
-
-        public static Type FetchType(string @namespace, string @class)
-        {
-            if ((@namespace.Trim().Length + @class.Trim().Length) == 0)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("The empty string is not a valid type name.");
-                Console.ForegroundColor = ConsoleColor.White;
-
-                return null;
-            }
-
-            if (string.IsNullOrWhiteSpace(@namespace))
-                if (PRIMITIVES.ContainsKey(@class))
-                {
-                    Tuple<string, string> name = PRIMITIVES[@class];
-
-                    @namespace = name.Item1;
-                    @class = name.Item2;
-                }
-                else if (@class.Contains('.'))
-                {
-                    @namespace = @class.Remove(@class.LastIndexOf('.'));
-                    @class = @class.Remove(0, @class.LastIndexOf('.') + 1);
-                }
-
-            string __fclassnamenrm = @namespace + (@namespace.Length > 0 ? "." : "") + @class;
-            string __fclassnamelwr = __fclassnamenrm.ToLower();
-            IEnumerable<Type> classes = from Type t in alltypes
-                                        where t.FullName.ToLower().EndsWith(__fclassnamelwr)
-                                        select t;
-
-            if (classes.Count() == 0)
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm, asmname.Name, asmname.Version);
-                Console.ForegroundColor = ConsoleColor.White;
-            }
-            else if (classes.Count() > 1)
-            {
-                IEnumerable<Type> oclasses = classes;
-
-                classes = from Type t in alltypes
-                          where t.Name == @class
-                          where t.Namespace == @namespace
-                          select t;
-
-                if (classes.Count() == 0)
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm, asmname.Name, asmname.Version);
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine("However, the following types have been found, which partly match the given type name:");
-
-                    int oclen = oclasses.Count();
-                    const int ocmaxlen = 24;
-
-                    foreach (Type t in oclasses.Take(ocmaxlen))
-                        Console.WriteLine("    {0}", t.FullName);
-
-                    if (oclen > ocmaxlen)
-                    {
-                        oclen -= ocmaxlen;
-
-                        Console.WriteLine("{0} more entries follow. Do you want to show them? (y/N)");
-
-                        if (char.ToLower(Console.ReadKey(true).KeyChar) == 'y')
-                            foreach (Type t in oclasses.Skip(ocmaxlen))
-                                Console.WriteLine("    {0}", t.FullName);
-                    }
-
-                    Console.ForegroundColor = ConsoleColor.White;
-                }
-                else if (classes.Count() > 1)
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("The type `{0}` could not be determined, as it is not unique:");
-
-                    foreach (Type t in classes)
-                        Console.WriteLine("    [{1}]{0}", t.FullName, t.Assembly.CodeBase);
-
-                    Console.ForegroundColor = ConsoleColor.White;
-                }
-                else
-                    return classes.First();
-            }
-            else
-                return classes.First();
-
-            return null;
-        }
-
-        public static Tuple<Type, ParameterAttributes> InternalFetchParameter(string p)
+        internal static Tuple<Type, ParameterAttributes> InternalFetchParameter(string p)
         {
             ParameterAttributes pa = default(ParameterAttributes);
             string _p = p;
@@ -865,20 +874,25 @@ Valid usage examples are:
                 _p = p.Remove(m.Index, m.Length);
             }
 
-            if ((m = Regex.Match(_p, @"(\s*\[\s*\,*\s*\]\s*)+$")).Success)
+            if ((m = Regex.Match(_p, @"(\s*\[\s*(\,*\s*)*\]\s*)+$")).Success)
             {
-                _p = _p.Remove(m.Index, m.Length);
+                _p = _p.Remove(m.Index, m.Length).Trim();
 
                 string brackets = m.ToString().Replace(" ", "");
 
+                Tuple<Type, ParameterAttributes> tpl = InternalFetchParameter(_p);
 
-                // TODO : ANALYZE BRACKETS AND CREATE ARRAY TYPE
+                if (tpl != null)
+                    return null;
+                else
+                    return new Tuple<Type, ParameterAttributes>(ParseArray(tpl.Item1, brackets), tpl.Item2);
             }
             if ((m = Regex.Match(_p, @"(\s*\**\s*)+$")).Success)
             {
                 _p = _p.Remove(m.Index, m.Length);
 
                 int ptrdepth = m.ToString().Replace(" ", "").Length;
+
 
 
                 // TODO : ANALYZE POINTER DEPTH AND CREATE POINTER TYPE
@@ -894,7 +908,29 @@ Valid usage examples are:
                 return new Tuple<Type, ParameterAttributes>(t, pa);
         }
 
-        public static MethodInfo MatchOnParameters(Type tp, string name, bool isprop, params string[] parameters)
+        /// <summary>
+        /// Returns the formatted member name based on the given MethodBase-subclass
+        /// </summary>
+        /// <param name="member">MethodBase-subclass instance</param>
+        /// <param name="constructor">Is the given member a constructor?</param>
+        /// <returns>Formatted member name</returns>
+        public static string MemberName(object member, bool constructor)
+        {
+            if (constructor)
+                return (member as MethodBase).DeclaringType.GetCPPTypeString() + ((member as MethodBase).IsStatic ? "::.cctor(unit)" : "::.ctor(unit)");
+            else
+                return (member as MethodInfo).GetCPPSignature();
+        }
+
+        /// <summary>
+        /// Fetches the method (not constructor!) which matches the given criteria
+        /// </summary>
+        /// <param name="tp">Declaring type</param>
+        /// <param name="name">Method name</param>
+        /// <param name="isprop">Is it a property?</param>
+        /// <param name="parameters">Method parameter type list</param>
+        /// <returns>MethodInfo-instance</returns>
+        public static MethodInfo FetchMethod(Type tp, string name, bool isprop, params string[] parameters)
         {
             MethodInfo[] members = tp.GetMethods((BindingFlags)0x01063f7f);
             IEnumerable<MethodInfo> match = from m in members
@@ -969,16 +1005,19 @@ Valid usage examples are:
             return null;
         }
 
-        public static string MemberName(object member, bool constructor)
-        {
-            if (constructor)
-                return (member as MethodBase).DeclaringType.GetCPPTypeString() + ((member as MethodBase).IsStatic ? "::.cctor" : "::.ctor");
-            else
-                return (member as MethodInfo).GetCPPSignature();
-        }
-
+        /// <summary>
+        /// Fetches the method which matches the given criteria
+        /// </summary>
+        /// <param name="tp">Declaring type</param>
+        /// <param name="name">Method name</param>
+        /// <param name="isprop">Is it a property?</param>
+        /// <param name="static">Is it static?</param>
+        /// <param name="constructor">Returns, whether the method is a constructor</param>
+        /// <param name="parameters">Method parameter type list</param>
+        /// <returns>MethodBase/MethodInfo/ConstructorInfo-instance</returns>
         public static dynamic FetchMethod(Type tp, string name, bool isprop, ref bool @static, out bool constructor, params string[] parameters)
         {
+#pragma warning disable 183, 184
             constructor = false;
 
             if (Regex.Match(name, @"^\/\/\w+$").Success)
@@ -993,21 +1032,11 @@ Valid usage examples are:
                 {
                     MethodInfo nfo = tp.GetMethod("Finalize", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
 
-                    if (nfo == null)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The type `{1}::{0}` has no destructor method defined.", tp.GetCPPTypeString(), asmname.Name);
-                        Console.ForegroundColor = ConsoleColor.White;
-                    }
-
                     if (@static)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine("The keyword `new` is missing.");
-                        Console.ForegroundColor = ConsoleColor.White;
+                        @static = _war("The keyword `new` is missing.") is string; // constant false
 
-                        @static = false;
-                    }
+                    if (nfo == null)
+                        _err("The type `{1}::{0}` has no destructor method defined.", tp.GetCPPTypeString(), asmname.Name);
 
                     return nfo;
                 }
@@ -1016,23 +1045,11 @@ Valid usage examples are:
                     ConstructorInfo nfo = tp.GetConstructors(BindingFlags.Static).FirstOrDefault();
 
                     if (nfo == null)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The type `{1}::{0}` has no static constructor method defined.", tp.GetCPPTypeString(), asmname.Name);
-                        Console.ForegroundColor = ConsoleColor.White;
-
-                        return null;
-                    }
+                        return _err("The type `{1}::{0}` has no static constructor method defined.", tp.GetCPPTypeString(), asmname.Name).NULL();
                     else
                     {
                         if (!@static)
-                        {
-                            Console.ForegroundColor = ConsoleColor.Yellow;
-                            Console.WriteLine("The keyword `new` has been ignored, as the requested method is a static one.");
-                            Console.ForegroundColor = ConsoleColor.White;
-
-                            @static = true;
-                        }
+                            @static = _war("The keyword `new` has been ignored, as the requested method is a static one.") is int; // constant true
 
                         constructor = true;
 
@@ -1040,50 +1057,181 @@ Valid usage examples are:
                     }
                 }
                 else
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("The given member name `...//{0}` is not valid.{1}", name, helpstr);
-                    Console.ForegroundColor = ConsoleColor.White;
-
-                    return null;
-                }
+                    return _err("The given member name `...//{0}` is not valid.{1}", name, helpstr).NULL();
 
                 constructor = true;
 
                 if (nfos.Length == 0)
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("The type `{1}::{0}` has no constructor method(s) defined.", tp.GetCPPTypeString(), asmname.Name);
-                    Console.ForegroundColor = ConsoleColor.White;
-                }
+                    _err("The type `{1}::{0}` has no constructor method(s) defined.", tp.GetCPPTypeString(), asmname.Name);
                 else
                 {
                     if (@static)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine("The keyword `new` is missing.");
-                        Console.ForegroundColor = ConsoleColor.White;
-
-                        @static = false;
-                    }
+                        @static = _war("The keyword `new` is missing.") is string; // constant false
 
                     if (nfos.Length == 1)
                         return nfos[0];
                     else
                     {
+                        Tuple<Type, ParameterAttributes>[] param = (from p in parameters select InternalFetchParameter(p)).ToArray();
+                        ConstructorInfo[] match = (from m in nfos
+                                                   let margs = from p in m.GetParameters()
+                                                               select new Tuple<Type, ParameterAttributes>(p.ParameterType, p.Attributes & (ParameterAttributes.In | ParameterAttributes.Out))
+                                                   where new Func<bool>(() => {
+                                                       Tuple<Type, ParameterAttributes>[] ma = margs.ToArray();
 
+                                                       if (ma.Length != param.Length)
+                                                           return false;
 
+                                                       for (int i = 0; i < ma.Length; i++)
+                                                           if (ma[i].Item2 != param[i].Item2)
+                                                               return false;
+                                                           else if (ma[i].Item1.FullName != param[i].Item1.FullName)
+                                                               return false;
 
+                                                       return true;
+                                                   })()
+                                                   select m).ToArray();
+
+                        if (match.Length != 1)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine("No constructor could be found inside the type `{1}::{0}`, which matches the given parameter list.", tp.GetCPPTypeString(), asmname.Name);
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine("However, the following constructors are defined inside the type `{1}::{0}`:");
+
+                            for (int i = 0; i < nfos.Length; i++)
+                                Console.WriteLine("    {0}", nfos[i].GetCPPSignature());
+
+                            Console.ForegroundColor = ConsoleColor.White;
+                        }
+                        else
+                            return match[0];
                     }
                 }
 
                 return null;
             }
             else
-                return MatchOnParameters(tp, name, isprop, parameters);
+                return FetchMethod(tp, name, isprop, parameters);
+#pragma warning restore
+        }
+
+        /// <summary>
+        /// Parses the given brackets as array and returns the generated array type
+        /// </summary>
+        /// <param name="parent">Array element type</param>
+        /// <param name="brackets">Brackets</param>
+        /// <returns>Array type</returns>
+        public static Type ParseArray(Type parent, string brackets)
+        {
+            Match m = Regex.Match(brackets, @"^(\s*\[\s*(?<commas>\,\s*)?\]\s*)");
+
+            if (!m.Success)
+                return parent;
+            else
+            {
+                brackets = brackets.Remove(m.Index, m.Length);
+
+                int commas = m.Groups["commas"].Success ? (from c in m.Groups["commas"].Value where c == ',' select false).Count() : 0;
+
+                return ParseArray(Array.CreateInstance(parent, new int[commas + 1]).GetType(), brackets);
+            }
+        }
+
+        /// <summary>
+        /// Prints the given message string to the stdio-stream
+        /// </summary>
+        /// <param name="s">Format string</param>
+        /// <returns>0</returns>
+        public static int _err(string s)
+        {
+            return _err(s, null);
+        }
+
+        /// <summary>
+        /// Prints the given formatted message string to the stdio-stream
+        /// </summary>
+        /// <param name="s">Format string</param>
+        /// <param name="args">Format arguments</param>
+        /// <returns>0</returns>
+        public static int _err(string s, params object[] args)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+
+            if (args == null)
+                Console.WriteLine(s);
+            else
+                Console.WriteLine(s, args);
+
+            Console.BackgroundColor = ConsoleColor.White;
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Prints the given message string to the stdio-stream
+        /// </summary>
+        /// <param name="s">Format string</param>
+        /// <returns>0</returns>
+        public static int _war(string s)
+        {
+            return _war(s, null);
+        }
+
+        /// <summary>
+        /// Prints the given formatted message string to the stdio-stream
+        /// </summary>
+        /// <param name="s">Format string</param>
+        /// <param name="args">Format arguments</param>
+        /// <returns>0</returns>
+        public static int _war(string s, params object[] args)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+
+            if (args == null)
+                Console.WriteLine(s);
+            else
+                Console.WriteLine(s, args);
+
+            Console.BackgroundColor = ConsoleColor.White;
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Prints the given message string to the stdio-stream
+        /// </summary>
+        /// <param name="s">Format string</param>
+        /// <returns>0</returns>
+        public static int _ok(string s)
+        {
+            return _ok(s, null);
+        }
+
+        /// <summary>
+        /// Prints the given formatted message string to the stdio-stream
+        /// </summary>
+        /// <param name="s">Format string</param>
+        /// <param name="args">Format arguments</param>
+        /// <returns>0</returns>
+        public static int _ok(string s, params object[] args)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+
+            if (args == null)
+                Console.WriteLine(s);
+            else
+                Console.WriteLine(s, args);
+
+            Console.BackgroundColor = ConsoleColor.White;
+
+            return 0;
         }
     }
 
+    /// <summary>
+    /// Represents a member signature
+    /// </summary>
     [Serializable]
     public class Signature
     {
