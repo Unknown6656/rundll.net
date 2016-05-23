@@ -84,18 +84,25 @@ namespace RunDLL
         /// <returns>Application exit code</returns>
         public static int Main(string[] args)
         {
-            typeof(Assembly).GetMethod("GetReferencedAssemblies").WarmUp();
+            try
+            {
+                typeof(Assembly).GetMethod("GetReferencedAssemblies").WarmUp();
 
-            foreach (MethodInfo nfo in typeof(IEnumerable<>).GetMethods())
-                if (!nfo.IsAbstract)
-                    nfo.WarmUp();
+                foreach (MethodInfo nfo in typeof(IEnumerable<>).GetMethods())
+                    if (!nfo.IsAbstract)
+                        nfo.WarmUp();
 
-            int retcode = InnerMain(args);
+                int retcode = InnerMain(args);
 
-            if (Debugger.IsAttached)
-                Win32.system("pause");
+                if (Debugger.IsAttached)
+                    Win32.system("pause");
 
-            return retcode;
+                return retcode;
+            }
+            catch (Exception ex)
+            {
+                return _err("An internal error occured:\n\t{0}\n{1}\n{2}\nHRESULT 0x{3:x8}\nSee `{4}` for more information...", ex.Message, ex.StackTrace, ex.Data.ToDebugString(), ex.HResult, ex.HelpLink) + 1;
+            }
         }
 
         /// <summary>
@@ -105,7 +112,7 @@ namespace RunDLL
         /// <returns>Application exit code</returns>
         public static int InnerMain(string[] args)
         {
-            #region HELP AND BASIC ARGUMENT CHECKS
+            #region ARG CHECK, ASM LOADING
 
             if (DisplayHelp(args))
                 return 0;
@@ -116,102 +123,12 @@ namespace RunDLL
                 return 0;
             }
 
-            #endregion
-            #region FILE EXISTENCE + ASM LOADING
-
             targnfo = new FileInfo(args[0]);
 
             if (!targnfo.Exists)
                 return _err("The file `{0}` could not not be found.", targnfo);
-
-            try
-            {
-                PEHeader hdr;
-
-                try
-                {
-                    hdr = new PEHeader(targnfo.FullName);
-                }
-                catch
-                {
-                    return _err("The file `{0}` does not seem to contain a valid PE/COFF header.", targnfo);
-                }
-
-                targasm = Assembly.LoadFrom(targnfo.FullName);
-                asmname = targasm.GetName();
-
-                Module manmodule = targasm.ManifestModule;
-
-                bool verbose = CheckForOption(args, "verbose", "v");
-
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("Assembly loaded:");
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("    Name:           {0}", asmname.Name);
-                Console.WriteLine("    Version:        {0}", asmname.Version);
-                Console.WriteLine("    Full name:      {0}", asmname.FullName);
-
-                if (verbose)
-                    Console.WriteLine("    Public key:     {0}", string.Join("", from b in asmname.GetPublicKey() ?? new byte[0] select b.ToString("X2")));
-
-                Console.WriteLine("    Architecture:   {0}, {1}Bit", asmname.ProcessorArchitecture, hdr.Is32BitHeader ? 32 : 64);
-
-                if (verbose)
-                    Console.WriteLine("    Culture name:   {0}", asmname.CultureName ?? "??-??");
-
-                Console.WriteLine("    Assembly flags: {0}", asmname.Flags);
-                Console.WriteLine("    CLR version:    {0}", targasm.ImageRuntimeVersion);
-                Console.WriteLine("    Cached in GAC:  {0}", targasm.GlobalAssemblyCache);
-
-                if (verbose)
-                {
-                    Console.WriteLine("    Host context:   {0:x16}", targasm.HostContext);
-                    Console.WriteLine("    MDS version:    {0:x8}", manmodule.MDStreamVersion);
-                    Console.WriteLine("    Metadata token: {0:x8}", manmodule.MetadataToken);
-                    Console.WriteLine("    MD module name: {0}", manmodule.Name);
-                    Console.WriteLine("    MD module GUID: {0}", manmodule.ModuleVersionId);
-                    Console.WriteLine("    PE DLL Charac.: 0x{0:x4} ({1})", hdr.FileHeader.Characteristics, (PEDLLCharacteristics)hdr.FileHeader.Characteristics);
-                    Console.WriteLine("    Machine:        0x{0:x4} ({1})", hdr.FileHeader.Machine, (IMAGE_FILE_MACHINE)hdr.FileHeader.Machine);
-
-                    IMAGE_DATA_DIRECTORY clrhdr;
-                    int subs = hdr.Is32BitHeader ? hdr.OptionalHeader32.Subsystem : hdr.OptionalHeader64.Subsystem;
-                    int chrs = hdr.Is32BitHeader ? hdr.OptionalHeader32.DllCharacteristics : hdr.OptionalHeader32.DllCharacteristics;
-                    
-                    Console.WriteLine("    Subsystem:      0x{0:x4} ({1})", subs, PEHeader.SubsystemStrings[(IMAGE_SUBSYSTEM)subs]);
-
-                    if (hdr.Is32BitHeader)
-                    {
-                        Console.WriteLine("    Size of code:   0x{0:x8}", hdr.OptionalHeader32.SizeOfCode);
-                        Console.WriteLine("    Base of code:   0x{0:x8}", hdr.OptionalHeader32.BaseOfCode);
-                        Console.WriteLine("    Base of data:   0x{0:x8}", hdr.OptionalHeader32.BaseOfData);
-                        Console.WriteLine("    Entrypt. addr.: 0x{0:x8}", hdr.OptionalHeader32.AddressOfEntryPoint);
-
-                        clrhdr = hdr.OptionalHeader32.CLRRuntimeHeader;
-                    }
-                    else
-                    {
-                        Console.WriteLine("    Size of code:   0x{0:x8}", hdr.OptionalHeader64.SizeOfCode);
-                        Console.WriteLine("    Base of code:   0x{0:x8}", hdr.OptionalHeader64.BaseOfCode);
-                        Console.WriteLine("    Entrypt. addr.: 0x{0:x8}", hdr.OptionalHeader64.AddressOfEntryPoint);
-
-                        clrhdr = hdr.OptionalHeader64.CLRRuntimeHeader;
-                    }
-                    
-                    Console.WriteLine("    Opt. DLL Char.: 0x{0:x4} ({1})", chrs, (OptionalDLLCharacteristics)chrs);
-                    Console.WriteLine("    CLR-Hdr. size:  0x{0:x8}", clrhdr.Size);
-                    Console.WriteLine("    CLR virt.addr.: 0x{0:x8}", clrhdr.VirtualAddress);
-                }
-            }
-            catch
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("The PE-file `{0}` does not seem to contain a valid .NET-header.", targnfo);
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("Use `rundll32.exe` for natice 32-Bit and 64-Bit MS/PE-assemblies or\n`rundll.exe` for native 16-Bit MS/PE-assemblies instead.");
-                Console.ForegroundColor = ConsoleColor.White;
-
+            if (LoadMainAssembly(args) == 0)
                 return 0;
-            }
 
             #endregion
             #region REGEX FETCH SIGNATURE
@@ -245,64 +162,7 @@ namespace RunDLL
             #endregion
             #region LOAD CLASS + MEMBER
 
-            List<Assembly> asms = new List<Assembly>() {
-                targasm,
-                typeof(string).Assembly,
-            };
-
-            if (CheckForOption(args, "stdlib", "s"))
-            {
-                asms.Add(typeof(Uri).Assembly);
-                asms.Add(typeof(DataSet).Assembly);
-                asms.Add(typeof(EnumerableQuery).Assembly);
-            }
-
-            if (CheckForOption(args, "wpflib", "w"))
-            {
-                asms.Add(typeof(XamlDirective).Assembly);
-                asms.Add(typeof(WindowsFormsHost).Assembly);
-                asms.Add(typeof(DependencyObject).Assembly);
-                asms.Add(typeof(System.Windows.DataObject).Assembly);
-                asms.Add(typeof(ConditionCollection).Assembly);
-            }
-
-            if (CheckForOption(args, "uclib", "u"))
-                asms.Add(Assembly.LoadFrom("uclib.dll"));
-
-            asms.AddRange(from string argv in args
-                          let targv = argv.ToLower().Trim()
-                          where targv.StartsWith("--extlib:") || targv.StartsWith("-e:")
-                          let tasm = new Func<Assembly>(delegate {
-                              string loc = targv.Remove(0, targv.IndexOf(':') + 1).Trim();
-
-                              try
-                              {
-                                  return Assembly.LoadFrom(loc);
-                              }
-                              catch
-                              {
-                                  _err("The external assembly `{0}` could not be loaded and has therefore been ignored.", loc);
-
-                                  return null;
-                              }
-                          }).Invoke()
-                          where tasm != null
-                          select tasm);
-            asms.AddRange(from string s in new string[] { /* TODO: ADD MORE ASSEMBLIES HERE */ } select Assembly.LoadFrom(s));
-
-            IEnumerable<AssemblyName> asmnames = (from _ in asms select _.GetReferencedAssemblies().Union(new AssemblyName[] { _.GetName() }))
-                                                 .SelectMany(_ => _).Distinct();
-
-            alltypes = asmnames.SelectMany(_ => {
-                try
-                {
-                    return Assembly.Load(_).GetTypes();
-                }
-                catch
-                {
-                    return new Type[0] { };
-                }
-            }).Distinct();
+            LoadAssemblies(args);
 
             Type @class = FetchType(sig.Namespace, sig.Class);
 
@@ -326,89 +186,12 @@ namespace RunDLL
             _ok("Member `{0}` loaded from `{1}`.", MemberName(result, constructor), asmname.Name);
 
             #endregion
-            #region PARSE ARGUMENTS
+            #region INVOKE METHOD
 
             List<object> parameters = new List<object>();
 
-            args = args.RegArguments();
-
-            for (int i = 0, d = @static ? 2 : 3, l = args.Length - d; i < l; i++)
-            {
-                ParameterInfo pnfo = (constructor ? cmember.GetParameters() : member.GetParameters())[i];
-                string argv = args[i + d];
-                string xml = "";
-                object param;
-                Match m;
-
-                if ((m = Regex.Match(argv, @"^\@xml\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
-                    try
-                    {
-                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
-                        param = Serialization.Deserialize(xml, pnfo.ParameterType);
-                    }
-                    catch
-                    {
-                        return _err("The given string does not seem to be a valid XML string.{0}", helpstr);
-                    }
-                else if ((m = Regex.Match(argv, @"^\@xml\:\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
-                    try
-                    {
-                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
-                        xml = File.ReadAllText(xml);
-
-                        try
-                        {
-                            param = Serialization.Deserialize(xml, pnfo.ParameterType);
-                        }
-                        catch
-                        {
-                            return _err("The given string does not seem to be a valid XML string.{0}", helpstr);
-                        }
-                    }
-                    catch
-                    {
-                        return _err("The file `{0}` could not be found or accessed.", xml);
-                    }
-                else if ((m = Regex.Match(argv, @"^\@json\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
-                    try
-                    {
-                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
-
-                        param = Serialization.DeserializeJSON(xml, pnfo.ParameterType);
-                    }
-                    catch
-                    {
-                        return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
-                    }
-                else if ((m = Regex.Match(argv, @"^\@json\:\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
-                    try
-                    {
-                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
-
-                        try
-                        {
-                            xml = File.ReadAllText(xml);
-                        }
-                        catch
-                        {
-                            return _err("The file `{0}` could not be found or accessed.", xml);
-                        }
-
-                        param = Serialization.DeserializeJSON(xml, pnfo.ParameterType);
-                    }
-                    catch
-                    {
-                        return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
-                    }
-                else
-                    if (!ParseParamter(argv, pnfo.ParameterType, out param))
-                        return _err("The given argument `{0}` could not be interpreted as `{1}`.", argv.Trim(), pnfo.ParameterType.GetCPPTypeString());
-                    else
-                        parameters.Add(param);
-            }
-
-            #endregion
-            #region INVOKE METHOD
+            if (ParseParameters(args, @static, constructor, cmember, member, out parameters) == 0)
+                return 0;
 
             object instance, @return;
             object[] cparameters = new object[parameters.Count];
@@ -448,7 +231,7 @@ namespace RunDLL
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("An error occured:");
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("[HResult 0x{2:x8}] {0}\n{1}\n{4}\n\nSee {3} for more information...", ex.Message, ex.StackTrace, ex.HResult, ex.HelpLink, ex.Data.ToDebugString());
+                Console.WriteLine("[HResult 0x{2:x8}] {0}\n{1}\n{4}\n\nSee `{3}` for more information...", ex.Message, ex.StackTrace, ex.HResult, ex.HelpLink, ex.Data.ToDebugString());
                 Console.ForegroundColor = ConsoleColor.White;
 
                 return 0;
@@ -643,6 +426,176 @@ Valid usage examples are:
         }
 
         /// <summary>
+        /// Loads the main assembly and displays basic and/or advanced information (based on the given command line arguments)
+        /// </summary>
+        /// <param name="args">Command line arguments</param>
+        /// <returns>Return code</returns>
+        public static int LoadMainAssembly(string[] args)
+        {
+            try
+            {
+                PEHeader hdr;
+
+                try
+                {
+                    hdr = new PEHeader(targnfo.FullName);
+                }
+                catch
+                {
+                    return _err("The file `{0}` does not seem to contain a valid PE/COFF header.", targnfo);
+                }
+
+                targasm = Assembly.LoadFrom(targnfo.FullName);
+                asmname = targasm.GetName();
+
+                Module manmodule = targasm.ManifestModule;
+
+                bool verbose = CheckForOption(args, "verbose", "v");
+
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("Assembly loaded:");
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("    Name:           {0}", asmname.Name);
+                Console.WriteLine("    Version:        {0}", asmname.Version);
+                Console.WriteLine("    Full name:      {0}", asmname.FullName);
+
+                if (verbose)
+                    Console.WriteLine("    Public key:     {0}", string.Join("", from b in asmname.GetPublicKey() ?? new byte[0] select b.ToString("X2")));
+
+                Console.WriteLine("    Architecture:   {0}, {1}Bit", asmname.ProcessorArchitecture, hdr.Is32BitHeader ? 32 : 64);
+
+                if (verbose)
+                    Console.WriteLine("    Culture name:   {0}", asmname.CultureName ?? "??-??");
+
+                Console.WriteLine("    Assembly flags: {0}", asmname.Flags);
+                Console.WriteLine("    CLR version:    {0}", targasm.ImageRuntimeVersion);
+                Console.WriteLine("    Cached in GAC:  {0}", targasm.GlobalAssemblyCache);
+
+                if (verbose)
+                {
+                    Console.WriteLine("    Host context:   {0:x16}", targasm.HostContext);
+                    Console.WriteLine("    MDS version:    {0:x8}", manmodule.MDStreamVersion);
+                    Console.WriteLine("    Metadata token: {0:x8}", manmodule.MetadataToken);
+                    Console.WriteLine("    MD module name: {0}", manmodule.Name);
+                    Console.WriteLine("    MD module GUID: {0}", manmodule.ModuleVersionId);
+                    Console.WriteLine("    PE DLL Charac.: 0x{0:x4} ({1})", hdr.FileHeader.Characteristics, (PEDLLCharacteristics)hdr.FileHeader.Characteristics);
+                    Console.WriteLine("    Machine:        0x{0:x4} ({1})", hdr.FileHeader.Machine, (IMAGE_FILE_MACHINE)hdr.FileHeader.Machine);
+
+                    IMAGE_DATA_DIRECTORY clrhdr;
+                    int subs = hdr.Is32BitHeader ? hdr.OptionalHeader32.Subsystem : hdr.OptionalHeader64.Subsystem;
+                    int chrs = hdr.Is32BitHeader ? hdr.OptionalHeader32.DllCharacteristics : hdr.OptionalHeader32.DllCharacteristics;
+
+                    Console.WriteLine("    Subsystem:      0x{0:x4} ({1})", subs, PEHeader.SubsystemStrings[(IMAGE_SUBSYSTEM)subs]);
+
+                    if (hdr.Is32BitHeader)
+                    {
+                        Console.WriteLine("    Size of code:   0x{0:x8}", hdr.OptionalHeader32.SizeOfCode);
+                        Console.WriteLine("    Base of code:   0x{0:x8}", hdr.OptionalHeader32.BaseOfCode);
+                        Console.WriteLine("    Base of data:   0x{0:x8}", hdr.OptionalHeader32.BaseOfData);
+                        Console.WriteLine("    Entrypt. addr.: 0x{0:x8}", hdr.OptionalHeader32.AddressOfEntryPoint);
+
+                        clrhdr = hdr.OptionalHeader32.CLRRuntimeHeader;
+                    }
+                    else
+                    {
+                        Console.WriteLine("    Size of code:   0x{0:x8}", hdr.OptionalHeader64.SizeOfCode);
+                        Console.WriteLine("    Base of code:   0x{0:x8}", hdr.OptionalHeader64.BaseOfCode);
+                        Console.WriteLine("    Entrypt. addr.: 0x{0:x8}", hdr.OptionalHeader64.AddressOfEntryPoint);
+
+                        clrhdr = hdr.OptionalHeader64.CLRRuntimeHeader;
+                    }
+
+                    Console.WriteLine("    Opt. DLL Char.: 0x{0:x4} ({1})", chrs, (OptionalDLLCharacteristics)chrs);
+                    Console.WriteLine("    CLR-Hdr. size:  0x{0:x8}", clrhdr.Size);
+                    Console.WriteLine("    CLR virt.addr.: 0x{0:x8}", clrhdr.VirtualAddress);
+                }
+            }
+            catch
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("The PE-file `{0}` does not seem to contain a valid .NET-header.", targnfo);
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("Use `rundll32.exe` for natice 32-Bit and 64-Bit MS/PE-assemblies or\n`rundll.exe` for native 16-Bit MS/PE-assemblies instead.");
+                Console.ForegroundColor = ConsoleColor.White;
+
+                return 0;
+            }
+
+            return 1;
+        }
+
+        /// <summary>
+        /// Loads all assembly types based on the given arguments
+        /// </summary>
+        /// <param name="args">Command line arguments</param>
+        public static void LoadAssemblies(string[] args)
+        {
+            List<Assembly> asms = new List<Assembly>() {
+                targasm,
+                typeof(string).Assembly,
+            };
+
+            if (CheckForOption(args, "stdlib", "s"))
+            {
+                asms.Add(typeof(Uri).Assembly);
+                asms.Add(typeof(DataSet).Assembly);
+                asms.Add(typeof(EnumerableQuery).Assembly);
+            }
+
+            if (CheckForOption(args, "wpflib", "w"))
+            {
+                asms.Add(typeof(XamlDirective).Assembly);
+                asms.Add(typeof(WindowsFormsHost).Assembly);
+                asms.Add(typeof(DependencyObject).Assembly);
+                asms.Add(typeof(System.Windows.DataObject).Assembly);
+                asms.Add(typeof(ConditionCollection).Assembly);
+            }
+
+            // TODO : winformlib
+            // TODO : fsharplib
+            // TODO : wcflib
+            // TODO : system.security, webext, encryption, ...
+
+            if (CheckForOption(args, "uclib", "u"))
+                asms.Add(Assembly.LoadFrom("uclib.dll"));
+
+            asms.AddRange(from string argv in args
+                          let targv = argv.ToLower().Trim()
+                          where targv.StartsWith("--extlib:") || targv.StartsWith("-e:")
+                          let tasm = new Func<Assembly>(delegate {
+                              string loc = targv.Remove(0, targv.IndexOf(':') + 1).Trim();
+
+                              try
+                              {
+                                  return Assembly.LoadFrom(loc);
+                              }
+                              catch
+                              {
+                                  _err("The external assembly `{0}` could not be loaded and has therefore been ignored.", loc);
+
+                                  return null;
+                              }
+                          }).Invoke()
+                          where tasm != null
+                          select tasm);
+            asms.AddRange(from string s in new string[] { /* TODO: ADD MORE ASSEMBLIES HERE */ } select Assembly.LoadFrom(s));
+
+            IEnumerable<AssemblyName> asmnames = (from _ in asms select _.GetReferencedAssemblies().Union(new AssemblyName[] { _.GetName() }))
+                                                 .SelectMany(_ => _).Distinct();
+
+            alltypes = asmnames.SelectMany(_ => {
+                try
+                {
+                    return Assembly.Load(_).GetTypes();
+                }
+                catch
+                {
+                    return new Type[0] { };
+                }
+            }).Distinct();
+        }
+
+        /// <summary>
         /// Fetches a type based on the namespace and typename
         /// </summary>
         /// <param name="namespace">Namespace name</param>
@@ -730,6 +683,100 @@ Valid usage examples are:
         }
 
         /// <summary>
+        /// Parses the given parameters based on the given command line arguments and returns the parameter object instance list
+        /// </summary>
+        /// <param name="args">Command line arguments</param>
+        /// <param name="static">Is the method static?</param>
+        /// <param name="constructor">Is the method a constructor?</param>
+        /// <param name="cmember">Constructor information</param>
+        /// <param name="member">Method information</param>
+        /// <param name="parameters">Parameter object instance list</param>
+        /// <returns>Return code</returns>
+        public static int ParseParameters(string[] args, bool @static, bool constructor, ConstructorInfo cmember, MethodInfo member, out List<object> parameters)
+        {
+            parameters = new List<object>();
+
+            args = args.RegArguments();
+
+            for (int i = 0, d = @static ? 2 : 3, l = args.Length - d; i < l; i++)
+            {
+                ParameterInfo pnfo = (constructor ? cmember.GetParameters() : member.GetParameters())[i];
+                string argv = args[i + d];
+                string xml = "";
+                object param;
+                Match m;
+
+                if ((m = Regex.Match(argv, @"^\@xml\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
+                    try
+                    {
+                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
+                        param = Serialization.Deserialize(xml, pnfo.ParameterType);
+                    }
+                    catch
+                    {
+                        return _err("The given string does not seem to be a valid XML string.{0}", helpstr);
+                    }
+                else if ((m = Regex.Match(argv, @"^\@xml\:\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
+                    try
+                    {
+                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
+                        xml = File.ReadAllText(xml);
+
+                        try
+                        {
+                            param = Serialization.Deserialize(xml, pnfo.ParameterType);
+                        }
+                        catch
+                        {
+                            return _err("The given string does not seem to be a valid XML string.{0}", helpstr);
+                        }
+                    }
+                    catch
+                    {
+                        return _err("The file `{0}` could not be found or accessed.", xml);
+                    }
+                else if ((m = Regex.Match(argv, @"^\@json\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
+                    try
+                    {
+                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
+
+                        param = Serialization.DeserializeJSON(xml, pnfo.ParameterType);
+                    }
+                    catch
+                    {
+                        return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
+                    }
+                else if ((m = Regex.Match(argv, @"^\@json\:\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
+                    try
+                    {
+                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
+
+                        try
+                        {
+                            xml = File.ReadAllText(xml);
+                        }
+                        catch
+                        {
+                            return _err("The file `{0}` could not be found or accessed.", xml);
+                        }
+
+                        param = Serialization.DeserializeJSON(xml, pnfo.ParameterType);
+                    }
+                    catch
+                    {
+                        return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
+                    }
+                else
+                    if (!ParseParamter(argv, pnfo.ParameterType, out param))
+                        return _err("The given argument `{0}` could not be interpreted as `{1}`.", argv.Trim(), pnfo.ParameterType.GetCPPTypeString());
+                    else
+                        parameters.Add(param);
+            }
+
+            return 1;
+        }
+
+        /// <summary>
         /// Parses the given parameter based on the given type and returns the parsing result
         /// </summary>
         /// <param name="argv">Parameter representation</param>
@@ -751,8 +798,20 @@ Valid usage examples are:
                     argv = (m.Groups["sign"].ToString().Contains('-') ? "-" : "") + ul;
                     isnum = true;
                 }
-                    // TODO : ADD OTHER BASES
+                else if ((m = Regex.Match(argv, @"^\s*(?<sign>\+|\-)?\s*(0o(?<value>[0-7]+))\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
+                {
+                    ulong ul = (ulong)Convert.ToInt64(m.Groups["value"].ToString(), 8);
 
+                    argv = (m.Groups["sign"].ToString().Contains('-') ? "-" : "") + ul;
+                    isnum = true;
+                }
+                else if ((m = Regex.Match(argv, @"^\s*(?<sign>\+|\-)?\s*(0b(?<value>[01]+))\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
+                {
+                    ulong ul = (ulong)Convert.ToInt64(m.Groups["value"].ToString(), 2);
+
+                    argv = (m.Groups["sign"].ToString().Contains('-') ? "-" : "") + ul;
+                    isnum = true;
+                }
                 else if ((m = Regex.Match(argv, @"^\s*(?<sign>\+|\-)?\s*(?<value>[0-9]*(\.|\,)?[0-9]+([e][\-\+]?[0-9]+)?)(d|f|m)?\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
                 {
                     decimal dec = decimal.Parse(m.Groups["value"].ToString().Replace('.', ','));
@@ -851,7 +910,12 @@ Valid usage examples are:
             }
         }
 
-        internal static Tuple<Type, ParameterAttributes> InternalFetchParameter(string p)
+        /// <summary>
+        /// Fetches the parameter type and attributes from its given string representation
+        /// </summary>
+        /// <param name="p">Parameter string representation</param>
+        /// <returns>Parameter type and attributes</returns>
+        public static Tuple<Type, ParameterAttributes> FetchParameter(string p)
         {
             ParameterAttributes pa = default(ParameterAttributes);
             string _p = p;
@@ -880,7 +944,7 @@ Valid usage examples are:
 
                 string brackets = m.ToString().Replace(" ", "");
 
-                Tuple<Type, ParameterAttributes> tpl = InternalFetchParameter(_p);
+                Tuple<Type, ParameterAttributes> tpl = FetchParameter(_p);
 
                 if (tpl != null)
                     return null;
@@ -947,7 +1011,7 @@ Valid usage examples are:
 
                     if (!isprop)
                         foreach (string p in parameters)
-                            if ((res = InternalFetchParameter(p)) == null)
+                            if ((res = FetchParameter(p)) == null)
                                 return null;
                             else
                                 paramtypes.Add(res);
@@ -1072,7 +1136,7 @@ Valid usage examples are:
                         return nfos[0];
                     else
                     {
-                        Tuple<Type, ParameterAttributes>[] param = (from p in parameters select InternalFetchParameter(p)).ToArray();
+                        Tuple<Type, ParameterAttributes>[] param = (from p in parameters select FetchParameter(p)).ToArray();
                         ConstructorInfo[] match = (from m in nfos
                                                    let margs = from p in m.GetParameters()
                                                                select new Tuple<Type, ParameterAttributes>(p.ParameterType, p.Attributes & (ParameterAttributes.In | ParameterAttributes.Out))
@@ -1163,7 +1227,7 @@ Valid usage examples are:
             else
                 Console.WriteLine(s, args);
 
-            Console.BackgroundColor = ConsoleColor.White;
+            Console.ForegroundColor = ConsoleColor.White;
 
             return 0;
         }
@@ -1193,7 +1257,7 @@ Valid usage examples are:
             else
                 Console.WriteLine(s, args);
 
-            Console.BackgroundColor = ConsoleColor.White;
+            Console.ForegroundColor = ConsoleColor.White;
 
             return 0;
         }
@@ -1223,7 +1287,7 @@ Valid usage examples are:
             else
                 Console.WriteLine(s, args);
 
-            Console.BackgroundColor = ConsoleColor.White;
+            Console.ForegroundColor = ConsoleColor.White;
 
             return 0;
         }
