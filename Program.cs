@@ -237,9 +237,43 @@ namespace RunDLL
                 return 0;
             }
 
-            #endregion
-            #region PRINT RETURN VALUE
+            PrintReturnValue(args, constructor, @static, @return, @class, member);
 
+            #endregion
+            #region GC COLLECTION
+
+            try
+            {
+                if (@return is GCHandle)
+                    ((GCHandle)@return).Free();
+            } catch { }
+
+            try
+            {
+                if (@return is IDisposable)
+                    (@return as IDisposable).Dispose();
+            } catch { }
+
+            @return = null;
+
+            GC.Collect();
+
+            #endregion
+
+            return 0;
+        }
+        
+        /// <summary>
+        /// Prints the given return value
+        /// </summary>
+        /// <param name="args">Command line arguments?</param>
+        /// <param name="constructor">Is constructor?</param>
+        /// <param name="static">Is the method static?</param>
+        /// <param name="return">Method return value</param>
+        /// <param name="class">Parent type</param>
+        /// <param name="member">Member information</param>
+        public static void PrintReturnValue(string[] args, bool constructor, bool @static, object @return, Type @class, MethodInfo member)
+        {
             if (!(constructor && @static))
             {
                 Console.ForegroundColor = ConsoleColor.Gray;
@@ -280,29 +314,6 @@ namespace RunDLL
             }
 
             Console.WriteLine("\n------------------------------------------------------------------------\n");
-
-            #endregion
-            #region GC COLLECTION
-
-            try
-            {
-                if (@return is GCHandle)
-                    ((GCHandle)@return).Free();
-            } catch { }
-
-            try
-            {
-                if (@return is IDisposable)
-                    (@return as IDisposable).Dispose();
-            } catch { }
-
-            @return = null;
-
-            GC.Collect();
-
-            #endregion
-
-            return 0;
         }
 
         /// <summary>
@@ -1016,7 +1027,11 @@ Valid usage examples are:
                             else
                                 paramtypes.Add(res);
 
+                    PropertyInfo[] props = tp.GetProperties();
+
                     match = isprop ? from m in match
+                                     where m.IsSpecialName
+                                     where props.Any(_ => _.GetSetMethod() == m || _.GetGetMethod() == m)
                                      where true // TODO : PROPERTIES
                                      select m
                                    : from m in match

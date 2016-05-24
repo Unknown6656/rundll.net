@@ -1,4 +1,6 @@
-﻿+ Match on properties
+﻿* Match on properties
++ Match on indices
++ Match on operators (?)
 + Add argument pointer analyzation
 + Add argument generic/nested analyzation
 + Throw error if parameter type could not be found in assemblies
