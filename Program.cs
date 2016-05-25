@@ -33,8 +33,9 @@ namespace RunDLL
     /// </summary>
     public unsafe static class Program
     {
+        internal const string STR_REGEX_PARAMBASE = @"\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*";
         internal static readonly Regex REGEX_TYPE = new Regex(@"(?<namespace>(\w+\.)*)(?<class>\w+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?(?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<parameters>\(\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*\))?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?((?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?|(?<name>this)(?<parameters>\[" + STR_REGEX_PARAMBASE + @"\])?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         internal static readonly Dictionary<string, Tuple<string, string>> PRIMITIVES = new Dictionary<string, Tuple<string, string>>() {
             { "bool", new Tuple<string, string>("System", "Boolean") },
             { "byte", new Tuple<string, string>("System", "Byte") },
@@ -217,12 +218,14 @@ namespace RunDLL
                 Console.WriteLine("--------------------------- STDSTREAM OUTPUT ---------------------------\n");
                 Console.ForegroundColor = ConsoleColor.White;
 
-                instance = @static ? null : Activator.CreateInstance(@class, true);
-
                 if (constructor)
                     @return = cmember.Invoke(cparameters);
                 else
+                {
+                    instance = @static ? null : Activator.CreateInstance(@class, true);
+
                     @return = member.Invoke(instance, cparameters);
+                }
             }
             catch (Exception ex)
             {
@@ -307,13 +310,34 @@ namespace RunDLL
                         }
                         catch { }
 
-                        Console.WriteLine(@return.var_dump(depth: depth));
+                        Console.WriteLine(@return.var_dump(CheckPrintability("├─└╞═╘"/* <--ibm850 */), depth)); //  "├─└╞═╘" /* <--unicode */
                     }
                 else
                     Console.WriteLine(@return);
             }
 
             Console.WriteLine("\n------------------------------------------------------------------------\n");
+        }
+
+        /// <summary>
+        /// Checks, wether the given string can be printed inside the stdio-stream using the current character encoding
+        /// </summary>
+        /// <param name="p">String to be printed</param>
+        /// <returns>Check result</returns>
+        public static bool CheckPrintability(string p)
+        {
+            return CheckPrintability(p, Console.OutputEncoding);
+        }
+
+        /// <summary>
+        /// Checks, wether the given string can be printed using the given character encoding
+        /// </summary>
+        /// <param name="p">String to be printed</param>
+        /// <param name="enc">Character encoding</param>
+        /// <returns>Check result</returns>
+        public static bool CheckPrintability(string p, Encoding enc)
+        {
+            return enc.GetString(enc.GetBytes(p)) == p;
         }
 
         /// <summary>
@@ -1031,8 +1055,15 @@ Valid usage examples are:
 
                     match = isprop ? from m in match
                                      where m.IsSpecialName
-                                     where props.Any(_ => _.GetSetMethod() == m || _.GetGetMethod() == m)
-                                     where true // TODO : PROPERTIES
+                                     let sel = from p in props
+                                               where p.GetSetMethod() == m ||
+                                                     p.GetGetMethod() == m ||
+                                                     p.Name == name
+                                               select p
+                                     where sel.Count() > 1
+                                     where new Func<bool>(delegate {
+                                         return true; // TODO: Fix on property matching
+                                     })()
                                      select m
                                    : from m in match
                                      let margs = from p in m.GetParameters()
@@ -1162,7 +1193,11 @@ Valid usage examples are:
                                                            return false;
 
                                                        for (int i = 0; i < ma.Length; i++)
-                                                           if (ma[i].Item2 != param[i].Item2)
+                                                           if (ma[i] == null || param[i] == null)
+                                                               return false;
+                                                           else if (ma[i].Item1 == null || param[i] == null)
+                                                               return false;
+                                                           else if (ma[i].Item2 != param[i].Item2)
                                                                return false;
                                                            else if (ma[i].Item1.FullName != param[i].Item1.FullName)
                                                                return false;
