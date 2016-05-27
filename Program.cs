@@ -26,6 +26,8 @@ using CoreLib.Generic;
 using CoreLib.Runtime;
 using CoreLib;
 
+using env = global::System.Environment;
+
 namespace RunDLL
 {
     /// <summary>
@@ -56,6 +58,12 @@ namespace RunDLL
             { "object", new Tuple<string, string>("System", "Object") },
             { "string", new Tuple<string, string>("System", "String") },
         };
+        internal static readonly IEnumerable<DirectoryInfo> additionalpaths = new List<DirectoryInfo>() {
+            new DirectoryInfo(env.GetFolderPath(env.SpecialFolder.System)),
+            new DirectoryInfo(env.GetFolderPath(env.SpecialFolder.SystemX86)),
+            new DirectoryInfo(env.GetFolderPath(env.SpecialFolder.Windows)),
+            new DirectoryInfo(RuntimeEnvironment.GetRuntimeDirectory()),
+        };
         internal static readonly FileInfo nfo = new FileInfo(Assembly.GetExecutingAssembly().Location);
         internal static readonly string modname = nfo.Name.ToLower().Replace(nfo.Extension.ToLower(), "").Trim('.', ' ', '\t', '\r', '\n');
         internal static readonly string helpstr = "Use '" + modname + " --help' for further reference.";
@@ -70,12 +78,6 @@ namespace RunDLL
         /// </summary>
         static Program()
         {
-            //AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler((o, a) => {
-            //    if (a.Name.ToLower().Contains("uclib"))
-            //        return Assembly.Load(Properties.Resources.uclib);
-            //    else
-            //        return null;
-            //});
         }
         
         /// <summary>
@@ -124,10 +126,6 @@ namespace RunDLL
                 return 0;
             }
 
-            targnfo = new FileInfo(args[0]);
-
-            if (!targnfo.Exists)
-                return _err("The file `{0}` could not not be found.", targnfo);
             if (LoadMainAssembly(args) == 0)
                 return 0;
 
@@ -461,12 +459,57 @@ Valid usage examples are:
         }
 
         /// <summary>
+        /// Loads the assembly based on the given name
+        /// </summary>
+        /// <param name="name">Assembly name</param>
+        /// <returns>Assembly</returns>
+        public static Assembly LoadAsssembly(string name)
+        {
+            try
+            {
+                return Assembly.LoadFrom(name);
+            }
+            catch
+            {
+                string comppath = env.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) + ";" +
+                                  env.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process) + ";" +
+                                  env.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine);
+
+                IEnumerable<DirectoryInfo> dirs = (from p in comppath.Split(';')
+                                                   let d = new DirectoryInfo(p.Trim())
+                                                   where d.Exists
+                                                   select d).Union(additionalpaths);
+
+                foreach (FileInfo f in dirs.SelectMany(_ => _.GetFiles('*' + name + '*')))
+                    try
+                    {
+                        return Assembly.LoadFrom(f.FullName);
+                    }
+                    catch { }
+
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Loads the main assembly and displays basic and/or advanced information (based on the given command line arguments)
         /// </summary>
         /// <param name="args">Command line arguments</param>
         /// <returns>Return code</returns>
         public static int LoadMainAssembly(string[] args)
         {
+            targnfo = new FileInfo(args[0]);
+
+            if (!targnfo.Exists)
+                try
+                {
+                    targnfo = new FileInfo(LoadAsssembly(args[0]).Location);
+                }
+                catch
+                {
+                    return _err("The file `{0}` could not not be found.", targnfo);
+                }
+
             try
             {
                 PEHeader hdr;
@@ -699,29 +742,38 @@ Valid usage examples are:
 
                 if (classes.Count() == 0)
                 {
-                    _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm, asmname.Name, asmname.Version);
+                    classes = from Type t in alltypes
+                              where t.Name == @class
+                              select t;
 
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine("However, the following types have been found, which partly match the given type name:");
-
-                    int oclen = oclasses.Count();
-                    const int ocmaxlen = 24;
-
-                    foreach (Type t in oclasses.Take(ocmaxlen))
-                        Console.WriteLine("    {0}", t.FullName);
-
-                    if (oclen > ocmaxlen)
+                    if (classes.Count() != 1)
                     {
-                        oclen -= ocmaxlen;
+                        _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm, asmname.Name, asmname.Version);
 
-                        Console.WriteLine("{0} more entries follow. Do you want to show them? (y/N)", oclen);
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("However, the following types have been found, which partly match the given type name:");
 
-                        if (char.ToLower(Console.ReadKey(false).KeyChar) == 'y')
-                            foreach (Type t in oclasses.Skip(ocmaxlen))
-                                Console.WriteLine("    {0}", t.FullName);
+                        int oclen = oclasses.Count();
+                        const int ocmaxlen = 24;
+
+                        foreach (Type t in oclasses.Take(ocmaxlen))
+                            Console.WriteLine("    {0}", t.FullName);
+
+                        if (oclen > ocmaxlen)
+                        {
+                            oclen -= ocmaxlen;
+
+                            Console.WriteLine("{0} more entries follow. Do you want to show them? (y/N)", oclen);
+
+                            if (char.ToLower(Console.ReadKey(false).KeyChar) == 'y')
+                                foreach (Type t in oclasses.Skip(ocmaxlen))
+                                    Console.WriteLine("    {0}", t.FullName);
+                        }
+
+                        Console.ForegroundColor = ConsoleColor.White;
                     }
-
-                    Console.ForegroundColor = ConsoleColor.White;
+                    else
+                        return classes.First();
                 }
                 else if (classes.Count() > 1)
                 {
