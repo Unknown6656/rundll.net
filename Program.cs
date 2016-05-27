@@ -35,7 +35,7 @@ namespace RunDLL
     {
         internal const string STR_REGEX_PARAMBASE = @"\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*";
         internal static readonly Regex REGEX_TYPE = new Regex(@"(?<namespace>(\w+\.)*)(?<class>\w+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?((?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?|(?<name>this)(?<parameters>\[" + STR_REGEX_PARAMBASE + @"\])?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?((?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?|(?<name>\/\/this)(?<parameters>\[" + STR_REGEX_PARAMBASE + @"\])?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         internal static readonly Dictionary<string, Tuple<string, string>> PRIMITIVES = new Dictionary<string, Tuple<string, string>>() {
             { "bool", new Tuple<string, string>("System", "Boolean") },
             { "byte", new Tuple<string, string>("System", "Byte") },
@@ -204,7 +204,7 @@ namespace RunDLL
             for (int i = 0, l = pnfos.Length; i < l; i++)
                 try
                 {
-                    cparameters[i] = Convert.ChangeType(parameters[i], pnfos[i].ParameterType);
+                    cparameters[i] = ConvertType(parameters[i], pnfos[i].ParameterType);
                 }
                 catch
                 {
@@ -265,7 +265,7 @@ namespace RunDLL
 
             return 0;
         }
-        
+
         /// <summary>
         /// Prints the given return value
         /// </summary>
@@ -631,6 +631,31 @@ Valid usage examples are:
         }
 
         /// <summary>
+        /// Converts the given object instance to the given type
+        /// </summary>
+        /// <param name="in">Source object</param>
+        /// <param name="type">Target type</param>
+        /// <returns>Converted object instance</returns>
+        public static object ConvertType(object @in, Type type)
+        {
+            if (type.IsArray)
+            {
+                Array src = @in as Array;
+                Array dest = Array.CreateInstance(type.GetElementType(), src.Length);
+
+                Array.Copy(src, dest, src.Length);
+
+                return dest;
+            }
+            else if (type.IsPointer)
+                return Pointer.Box(Pointer.Unbox(@in), type);
+            // else if (type.IsNested)
+            //     ;
+            else
+                return Convert.ChangeType(@in, type);
+        }
+        
+        /// <summary>
         /// Fetches a type based on the namespace and typename
         /// </summary>
         /// <param name="namespace">Namespace name</param>
@@ -639,7 +664,7 @@ Valid usage examples are:
         public static Type FetchType(string @namespace, string @class)
         {
             if ((@namespace.Trim().Length + @class.Trim().Length) == 0)
-                return _err("The empty string is not a valid type name.").NULL() as Type;
+                return _err("The empty string is not a valid type name. Please enter the type name before the member name (separated by a dot `.` or a double colon `::`).").NULL() as Type;
 
             if (string.IsNullOrWhiteSpace(@namespace))
                 if (PRIMITIVES.ContainsKey(@class))
@@ -916,6 +941,8 @@ Valid usage examples are:
 
                             if (t.IsValueType)
                             {
+                                
+
 
                                 // TODO : CREATE POINTER
 
@@ -924,7 +951,7 @@ Valid usage examples are:
                             else
                                 v = GCHandle.Alloc(v);
 
-                            return null;
+                            return v;
                         }
                     })
                     .Case<Type>(_ => {
@@ -932,7 +959,19 @@ Valid usage examples are:
 
                         return FetchType(m.Groups["namespace"].ToString(), m.Groups["class"].ToString());
                     })
-                    // ANY OTHER CASES
+                    .Case(T => Nullable.GetUnderlyingType(T) != null, (_, T) => {
+                        if (Nullable.Equals(_, null) || (argv.ToLower() == "null"))
+                            return null;
+                        else
+                        {
+                            Type _t = Nullable.GetUnderlyingType(T);
+                            object o = null;
+
+                            ParseParamter(argv, _t, out o);
+
+                            return o;
+                        }
+                    })
                     [type, null];
 
                 return true;
@@ -1031,10 +1070,18 @@ Valid usage examples are:
         /// <returns>MethodInfo-instance</returns>
         public static MethodInfo FetchMethod(Type tp, string name, bool isprop, params string[] parameters)
         {
+            bool indexer = name == "/this/";
             MethodInfo[] members = tp.GetMethods((BindingFlags)0x01063f7f);
-            IEnumerable<MethodInfo> match = from m in members
-                                            where m.Name == name
-                                            select m;
+            PropertyInfo[] props = tp.GetProperties();
+            IEnumerable<MethodInfo> match = isprop ? from p in props
+                                                     let pget = p.GetGetMethod() 
+                                                     where indexer ? p.GetIndexParameters().Length > 0
+                                                                   : p.Name == name ||
+                                                                     pget.Name == name
+                                                     select pget
+                                                   : from m in members
+                                                     where m.Name == name
+                                                     select m;
             List<Tuple<Type, ParameterAttributes>> paramtypes = new List<Tuple<Type, ParameterAttributes>>();
 
             if (match.Count() > 0)
@@ -1044,57 +1091,46 @@ Valid usage examples are:
                 {
                     Tuple<Type, ParameterAttributes> res;
 
-                    if (!isprop)
-                        foreach (string p in parameters)
-                            if ((res = FetchParameter(p)) == null)
-                                return null;
-                            else
-                                paramtypes.Add(res);
+                    foreach (string p in parameters)
+                        if ((res = FetchParameter(p)) == null)
+                            return null;
+                        else
+                            paramtypes.Add(res);
 
-                    PropertyInfo[] props = tp.GetProperties();
+                    match = from m in match
+                            let margs = from p in indexer ? (from i in props
+                                                             where i.GetIndexParameters().Length > 0
+                                                             where m == i.GetGetMethod()
+                                                             select i).First().GetIndexParameters()
+                                                          : m.GetParameters()
+                                        select new Tuple<Type, ParameterAttributes>(p.ParameterType, p.Attributes & (ParameterAttributes.In | ParameterAttributes.Out))
+                            where new Func<bool>(() => {
+                                var ma = margs.ToArray();
+                                var pa = paramtypes.ToArray();
 
-                    match = isprop ? from m in match
-                                     where m.IsSpecialName
-                                     let sel = from p in props
-                                               where p.GetSetMethod() == m ||
-                                                     p.GetGetMethod() == m ||
-                                                     p.Name == name
-                                               select p
-                                     where sel.Count() > 1
-                                     where new Func<bool>(delegate {
-                                         return true; // TODO: Fix on property matching
-                                     })()
-                                     select m
-                                   : from m in match
-                                     let margs = from p in m.GetParameters()
-                                                 select new Tuple<Type, ParameterAttributes>(p.ParameterType, p.Attributes & (ParameterAttributes.In | ParameterAttributes.Out))
-                                     where new Func<bool>(() => {
-                                         var ma = margs.ToArray();
-                                         var pa = paramtypes.ToArray();
+                                if (ma.Length != pa.Length)
+                                    return false;
 
-                                         if (ma.Length != pa.Length)
-                                             return false;
+                                for (int i = 0; i < ma.Length; i++)
+                                    if (ma[i].Item2 != pa[i].Item2)
+                                        return false;
+                                    else if (ma[i].Item1.FullName != pa[i].Item1.FullName)
+                                        return false;
 
-                                         for (int i = 0; i < ma.Length; i++)
-                                             if (ma[i].Item2 != pa[i].Item2)
-                                                 return false;
-                                             else if (ma[i].Item1.FullName != pa[i].Item1.FullName)
-                                                 return false;
-
-                                         return true;
-                                     })()
-                                     select m;
+                                return true;
+                            })()
+                            select m;
 
                     if (match.Count() == 0)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The member `{0}` could not be found inside the type `{1}::{2}`.", name, asmname.Name, tp.FullName);
+                        Console.WriteLine("The member `{0}` could not be found inside the type `{1}::{2}`.", indexer ? "__index" : name, asmname.Name, tp.FullName);
                         Console.ForegroundColor = ConsoleColor.White;
                     }
                     else if (match.Count() > 1)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The member `{0}` does match mulitple members inside `{1}::{2}`:", name, asmname.Name, tp.FullName);
+                        Console.WriteLine("The member `{0}` does match mulitple members inside `{1}::{2}`:", indexer ? "__index" : name, asmname.Name, tp.FullName);
                         Console.ForegroundColor = ConsoleColor.Yellow;
 
                         foreach (MethodInfo mnfo in match)
@@ -1108,7 +1144,7 @@ Valid usage examples are:
             else
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("The member `{0}` could not be found inside the type `{1}::{2}`.", name, asmname.Name, tp.FullName);
+                Console.WriteLine("The member `{0}` could not be found inside the type `{1}::{2}`.", indexer ? "__index" : name, asmname.Name, tp.FullName);
                 Console.ForegroundColor = ConsoleColor.White;
             }
 
@@ -1165,6 +1201,13 @@ Valid usage examples are:
 
                         return nfo;
                     }
+                }
+                else if (name == "this")
+                {
+                    if (@static)
+                        @static = _war("The keyword `new` is missing.") is string; // constant false
+
+                    return FetchMethod(tp, "/this/", true, parameters);
                 }
                 else
                     return _err("The given member name `...//{0}` is not valid.{1}", name, helpstr).NULL();

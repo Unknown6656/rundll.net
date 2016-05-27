@@ -73,5 +73,22 @@ namespace RunDLL.Properties {
                 return ResourceManager.GetString("PrintedHeader", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   Sucht eine lokalisierte Zeichenfolge, die @echo off
+        ///title rundll.net test methods
+        ///
+        ///:: tests follow here
+        ///cls &amp; rundll.net uclib.dll new math.mathfunction.//ctor(string) &quot;3X2&quot;
+        ///pause
+        ///cls &amp; rundll.net uclib.dll mathfunctions.get_x --v
+        ///pause
+        /// ähnelt.
+        /// </summary>
+        internal static string test {
+            get {
+                return ResourceManager.GetString("test", resourceCulture);
+            }
+        }
     }
 }
