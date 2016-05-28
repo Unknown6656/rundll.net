@@ -11,3 +11,7 @@ rundll.net uclib.dll mathfunctions.x --v
 rundll.net rundll.net.exe Program.Main(string[]) {"rundll.net.exe","Program.Main(string[])",null}
 :: test system library
 rundll.net mscorlib.dll IntPtr::Size
+:: test implicit operators
+rundll.net uclib.dll ConstantMathFunction:://opimplicit(decimal) 4
+:: test other operators
+

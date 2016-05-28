@@ -24,7 +24,7 @@ with the following parameters:
 * `'new'`<br/>
   The [`new`](https://msdn.microsoft.com/en-us/library/fa0ab757.aspx)-keyword is optional, but must be passed if the method in question is not a static one (without the quotes).
 * `method`<br/>
-  Either a [fully qualified namespace, class and method signature](https://msdn.microsoft.com/en-us/library/dfb3cx8s.aspx) or the name of the class (if unique) followed by the unique method name (or optinal parameters to identify the method). Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to address the type's instance  constructor, static constructor or destructor.
+  Either a [fully qualified namespace, class and method signature](https://msdn.microsoft.com/en-us/library/dfb3cx8s.aspx) or the name of the class (if unique) followed by the unique method name (or optinal parameters to identify the method). Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to address the type's instance  constructor, static constructor or destructor. Use `.//op____` to invoke an operator, where `____` represents the operator token.
 * `arguments`<br/>
   An optional list of arguments (separated by commas without any whitespace), which will be passed as method parameters to the given method.<br/>
 A serilaized XML- or JSON-string can be passed with `@XML:""....""` or `@JSON:""....""`, where `....` is the XML- or JSON-string in question. If the parameter shall bede serialized from a JSON- or XML-file, the argument shall be passed as `@JSON::""....""` or `@XML::""....""`, where `....` represents the path to the given JSON- or XML-file.
@@ -41,6 +41,44 @@ The following global options are defined:
 * `-u`, `--uclib`<br/>Includes the .NET Unknown6656 core library `uclib`
 * `-e:...`, `--extlib:...`<br/>Includes the given .NET library and loads its types. The assembly's file path must be given directly after the colon (`:`). This option can be given multiple times.
 * `-h`, `--help`<br/>Displays this help page.
+
+The following operatore tokens are defined:
+
+ - `//op+` &#160; &#160; The mathematical addition operator `+`
+ - `//op-` &#160; &#160; The mathematical subtraction operator `-`
+ - `//op*` &#160; &#160; The mathematical multiplication operator `*`
+ - `//op/` &#160; &#160; The mathematical division operator `/`
+ - `//op%` &#160; &#160; The mathematical modulos operator `%`
+ - `//op+=` &#160; &#160; The mathematical addition assignment operator `+=`
+ - `//op-=` &#160; &#160; The mathematical subtraction assignment operator `-=`
+ - `//op*=` &#160; &#160; The mathematical multiplication assignment operator `*=`
+ - `//op/=` &#160; &#160; The mathematical division assignment operator `/=`
+ - `//op%=` &#160; &#160; The mathematical modulos assignment operator `%=`
+ - `//op++` &#160; &#160; The unary mathematical increacement operator `++`
+ - `//op--` &#160; &#160; The unary mathematical decreacement operator `--`
+ - `//op!` &#160; &#160; The unary boolean inversion operator `!`
+ - `//op~` &#160; &#160; The unary bitwise inversion operator `~`
+ - `//op<<` &#160; &#160; The bitwise left shift operator `<<`
+ - `//op>>` &#160; &#160; The bitwise right shift operator `>>`
+ - `//op<<=` &#160; &#160; The bitwise left shift assignment operator `<<=`
+ - `//op>>=` &#160; &#160; The bitwise right shift assignment operator `>>=`
+ - `//op==` &#160; &#160; The equality operator `==`
+ - `//op!=` &#160; &#160; The inequality operator `!=`
+ - `//op=` &#160; &#160; The assignment operator `=`
+ - `//op->` &#160; &#160; The member selection operator `->`
+ - `//op->*` &#160; &#160; The member pointer selection operator `->*`
+ - `//op^` &#160; &#160; The bitwise XOR-operator `^`
+ - `//op|` &#160; &#160; The bitwise OR-operator `|`
+ - `//op&` &#160; &#160; The bitwise AND-operator `&`
+ - `//op||` &#160; &#160; The boolean OR-operator `||`
+ - `//op&&` &#160; &#160; The boolean AND-operator `&&`
+ - `//op^=` &#160; &#160; The bitwise XOR-assignment operator `^=`
+ - `//op|=` &#160; &#160; The bitwise OR-assignment operator `|=`
+ - `//op&=` &#160; &#160; The bitwise AND-assignment operator `&=`
+ - `//optrue` &#160; &#160; The cast operator `true`
+ - `//opfalse` &#160; &#160; The cast operator `false`
+ - `//opimplicit` &#160; &#160; The cast operator `implicit`
+ - `//opexplicit` &#160; &#160; The cast operator `explicit`
                 
 Valid usage examples are:
 ```

@@ -35,9 +35,10 @@ namespace RunDLL
     /// </summary>
     public unsafe static class Program
     {
+        internal const string STR_REGEX_OPBASE = @"(true|false|implicit|explicit|\+\+|--|\|\||&&|<<=?|>>=?|->|~|[+-=!^<>*&|%]=?)";
         internal const string STR_REGEX_PARAMBASE = @"\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*";
         internal static readonly Regex REGEX_TYPE = new Regex(@"(?<namespace>(\w+\.)*)(?<class>\w+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?((?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?|(?<name>\/\/this)(?<parameters>\[" + STR_REGEX_PARAMBASE + @"\])?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?((?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?|(?<name>\/\/this)(?<parameters>\[" + STR_REGEX_PARAMBASE + @"\])?|(?<name>\/\/op" + STR_REGEX_OPBASE + @")(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         internal static readonly Dictionary<string, Tuple<string, string>> PRIMITIVES = new Dictionary<string, Tuple<string, string>>() {
             { "bool", new Tuple<string, string>("System", "Boolean") },
             { "byte", new Tuple<string, string>("System", "Byte") },
@@ -58,7 +59,8 @@ namespace RunDLL
             { "object", new Tuple<string, string>("System", "Object") },
             { "string", new Tuple<string, string>("System", "String") },
         };
-        internal static readonly IEnumerable<DirectoryInfo> additionalpaths = new List<DirectoryInfo>() {
+        internal static readonly Dictionary<string, string> OPERATORS = CommonLanguageRuntime.operators.Reverse();
+        internal static readonly IEnumerable<DirectoryInfo> ADD_PATHS = new List<DirectoryInfo>() {
             new DirectoryInfo(env.GetFolderPath(env.SpecialFolder.System)),
             new DirectoryInfo(env.GetFolderPath(env.SpecialFolder.SystemX86)),
             new DirectoryInfo(env.GetFolderPath(env.SpecialFolder.Windows)),
@@ -372,7 +374,10 @@ with the following parameters:
                 method name (or optinal parameters to identify the method).
                 Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to
                 address the type's instance  constructor, static constructor
-                or destructor.
+                or destructor.  Use `.//op____` to invoke an operator, where
+                ____ represents the operator token, which can be found on the
+                website https://github.com/Unknown6656/rundll.net along with
+                further information.
     arguments - An optional list of arguments (separated by commas without any
                 whitespace), which will be passed as method parameters to the
                 given method. A serilaized XML- or JSON-string can be passed
@@ -478,7 +483,7 @@ Valid usage examples are:
                 IEnumerable<DirectoryInfo> dirs = (from p in comppath.Split(';')
                                                    let d = new DirectoryInfo(p.Trim())
                                                    where d.Exists
-                                                   select d).Union(additionalpaths);
+                                                   select d).Union(ADD_PATHS);
 
                 foreach (FileInfo f in dirs.SelectMany(_ => _.GetFiles('*' + name + '*')))
                     try
@@ -1218,7 +1223,7 @@ Valid usage examples are:
 #pragma warning disable 183, 184
             constructor = false;
 
-            if (Regex.Match(name, @"^\/\/\w+$").Success)
+            if (Regex.Match(name, @"^\/\/(\w+|op" + STR_REGEX_OPBASE + ")$").Success)
             {
                 name = name.Remove(0, 2).ToLower();
 
@@ -1260,6 +1265,20 @@ Valid usage examples are:
                         @static = _war("The keyword `new` is missing.") is string; // constant false
 
                     return FetchMethod(tp, "/this/", true, parameters);
+                }
+                else if (name.StartsWith("op"))
+                {
+                    if (!@static)
+                        @static = _war("The keyword `new` has been ignored, as the requested method is a static one.") is int; // constant true
+
+                    name = name.Remove(0, 2);
+
+                    if (!OPERATORS.ContainsKey(name))
+                        return _err("The static operator `{0}` could not be found inside the type `{1}::{2}`", name, asmname.Name, tp.GetCPPTypeString()).NULL();
+                    else
+                        name = OPERATORS[name];
+
+                    return FetchMethod(tp, name, false, parameters);
                 }
                 else
                     return _err("The given member name `...//{0}` is not valid.{1}", name, helpstr).NULL();
