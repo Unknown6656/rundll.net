@@ -27,6 +27,7 @@ using CoreLib.Runtime;
 using CoreLib;
 
 using env = global::System.Environment;
+using System.Runtime.Serialization.Formatters.Binary;
 
 namespace RunDLL
 {
@@ -155,7 +156,7 @@ namespace RunDLL
                 sig.Member = (reg.Groups["name"].ToString() ?? "").Trim('.', ' ', '\r', '\t', '\n');
                 sig.Arguments = (from string s in (reg.Groups["parameters"].ToString() ?? "").TrimStart('(').TrimEnd(')').Split(',')
                                  select s.Trim()).ToArray();
-                sig.IsProperty = !reg.Groups["parameters"].Success;
+                sig.IsProperty = !reg.Groups["parameters"].Success && !(method.Contains('(') && method.Contains(')'));
             }
             else
                 return _err("Invalid method name format `{1}`.{0}", helpstr, method);
@@ -289,31 +290,55 @@ namespace RunDLL
                 Console.ForegroundColor = ConsoleColor.White;
                 Console.WriteLine("\n{0}:", (constructor ? @class : member.ReturnType).GetCPPTypeString());
 
-                if (@return == null)
-                    Console.WriteLine("nullptr");
-                else if ((constructor ? @class : member.ReturnType).IsSerializable)
-                    try
+                Func<Type, object, string> print = null;
+                
+                print = new Func<Type, object, string>((T, _) => {
+                    if (_ == null)
+                        return "nullptr";
+                    else if (T.IsPrimitive)
+                        return _.ToString();
+                    else if (T.IsPointer)
                     {
-                        Console.WriteLine(Serialization.FormatJSON(new JavaScriptSerializer().Serialize(@return)));
-                    }
-                    catch
-                    {
-                        int depth = 1;
+                        byte[] buffer = new byte[Marshal.SizeOf(T)];
+                        void* ptr = Pointer.Unbox(_);
+                        IntPtr addr = (IntPtr)ptr;
+                        Type stype = T.GetElementType();
+                        object obj = Marshal.PtrToStructure(addr, stype);
 
+                        return string.Format("&[0x{0:x16}]: {1}", addr.ToInt64(), print(stype, obj));
+                    }
+                    else if (T.IsSerializable)
                         try
                         {
-                            depth = (from argv in args
-                                     let targv = argv.Trim().ToLower()
-                                     where targv.StartsWith("--depth") ||
-                                           targv.StartsWith("-d")
-                                     select int.Parse(Regex.Match(targv, @"^\s*(\-\-depth|\-d)(?<value>[1-7])\s*$").Groups["value"].ToString())).Max();
+                            return new JavaScriptSerializer().Serialize(@return).FormatJSON();
                         }
-                        catch { }
+                        catch
+                        {
+                            try
+                            {
+                                return Serialization.Serialize(@return).FormatXML();
+                            }
+                            catch
+                            {
+                                int depth = 1;
 
-                        Console.WriteLine(@return.var_dump(CheckPrintability("├─└╞═╘"/* <--ibm850 */), depth)); //  "├─└╞═╘" /* <--unicode */
-                    }
-                else
-                    Console.WriteLine(@return);
+                                try
+                                {
+                                    depth = (from argv in args
+                                             let targv = argv.Trim().ToLower()
+                                             where targv.StartsWith("--depth") ||
+                                                   targv.StartsWith("-d")
+                                             select int.Parse(Regex.Match(targv, @"^\s*(\-\-depth|\-d)(?<value>[1-7])\s*$").Groups["value"].ToString())).Max();
+                                } catch { }
+
+                                return _.var_dump(CheckPrintability("├─└╞═╘"/* <--ibm850 */), depth); //  "├─└╞═╘" /* <--unicode */
+                            }
+                        }
+                    else
+                        return _.ToString();
+                });
+
+                Console.WriteLine(print(constructor ? @class : member.ReturnType, @return));
             }
 
             Console.WriteLine("\n------------------------------------------------------------------------\n");
@@ -823,17 +848,7 @@ Valid usage examples are:
                 object param;
                 Match m;
 
-                if ((m = Regex.Match(argv, @"^\@xml\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
-                    try
-                    {
-                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
-                        param = Serialization.Deserialize(xml, pnfo.ParameterType);
-                    }
-                    catch
-                    {
-                        return _err("The given string does not seem to be a valid XML string.{0}", helpstr);
-                    }
-                else if ((m = Regex.Match(argv, @"^\@xml\:\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
+                if ((m = Regex.Match(argv, @"^\@xml\:\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
                     try
                     {
                         xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
@@ -852,16 +867,15 @@ Valid usage examples are:
                     {
                         return _err("The file `{0}` could not be found or accessed.", xml);
                     }
-                else if ((m = Regex.Match(argv, @"^\@json\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
+                else if ((m = Regex.Match(argv, @"^\@xml\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
                     try
                     {
                         xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
-
-                        param = Serialization.DeserializeJSON(xml, pnfo.ParameterType);
+                        param = Serialization.Deserialize(xml, pnfo.ParameterType);
                     }
                     catch
                     {
-                        return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
+                        return _err("The given string does not seem to be a valid XML string.{0}", helpstr);
                     }
                 else if ((m = Regex.Match(argv, @"^\@json\:\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
                     try
@@ -883,11 +897,21 @@ Valid usage examples are:
                     {
                         return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
                     }
-                else
-                    if (!ParseParamter(argv, pnfo.ParameterType, out param))
-                        return _err("The given argument `{0}` could not be interpreted as `{1}`.", argv.Trim(), pnfo.ParameterType.GetCPPTypeString());
-                    else
-                        parameters.Add(param);
+                else if ((m = Regex.Match(argv, @"^\@json\:", RegexOptions.Compiled | RegexOptions.IgnoreCase)).Success)
+                    try
+                    {
+                        xml = argv.Remove(m.Index, m.Length).Trim('"', ' ', '\t', '\r', '\n');
+
+                        param = Serialization.DeserializeJSON(xml, pnfo.ParameterType);
+                    }
+                    catch
+                    {
+                        return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
+                    }
+                else if (!ParseParamter(argv, pnfo.ParameterType, out param))
+                    return _err("The given argument `{0}` could not be interpreted as `{1}`.", argv.Trim(), pnfo.ParameterType.GetCPPTypeString());
+
+                parameters.Add(param);
             }
 
             return 1;
