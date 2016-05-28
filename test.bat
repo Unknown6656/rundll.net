@@ -15,3 +15,7 @@ rundll.net mscorlib.dll IntPtr::Size
 rundll.net uclib.dll ConstantMathFunction:://opimplicit(decimal) 4
 :: test other operators
 
+:: test C++/CLR-support
+rundll.net rundll.test.so TestModule::length(string) "foo/bar" --verbose
+:: test c++/CLR native pointer support
+rundll.net

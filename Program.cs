@@ -417,7 +417,7 @@ Valid usage examples are:
                     Console.WindowWidth = lines.Max(x => x.Length + 2);
 
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                ConsoleExtensions.AdvancedAnimatedWriteLine(helpstr, 2f);
+                ConsoleExtensions.AdvancedAnimatedWriteLine(helpstr, 3f);
                 Console.WriteLine();
                 Console.ForegroundColor = ConsoleColor.White;
 

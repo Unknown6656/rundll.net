@@ -1,5 +1,5 @@
 ﻿+ Add full F# support
-+ Add full C++/CLR support
+* Add full C++/CLR native pointer support
 + Add argument generic/nested analyzation
 * Add argument pointer creation on native value types
 * Add pointer creation without the need of a fixed address

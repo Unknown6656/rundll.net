@@ -40,7 +40,7 @@ The following global options are defined:
 * `-w`, `--wpflib`<br/>Includes the .NET WPF framework libraries ([`System.Xaml.dll`](http://referencesource.microsoft.com/#System.Xaml,namespaces), [`PresentationCore.dll`](http://referencesource.microsoft.com/#PresentationCore,namespaces), [`PresentationFramework.dll`](http://referencesource.microsoft.com/#PresentationFramework,namespaces), [`WindowsFormsIntegration.dll`](http://referencesource.microsoft.com/#WindowsFormsIntegration,namespaces) and [`WindowsBase.dll`](http://referencesource.microsoft.com/#WindowsBase,namespaces)).<br/>
 * `-u`, `--uclib`<br/>Includes the .NET Unknown6656 core library `uclib`
 * `-e:...`, `--extlib:...`<br/>Includes the given .NET library and loads its types. The assembly's file path must be given directly after the colon (`:`). This option can be given multiple times.
-* `-h`, `--help`<br/>Displays this help page.
+* `-h`, `--help`<br/>Displays the help page.
 
 The following operatore tokens are defined:
 
