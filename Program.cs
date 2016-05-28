@@ -11,6 +11,7 @@ using System.Collections;
 using CoreLib.Management;
 using System.Reflection;
 using Microsoft.CSharp;
+using System.Numerics;
 using System.Windows;
 using System.CodeDom;
 using System.Data;
@@ -27,7 +28,6 @@ using CoreLib.Runtime;
 using CoreLib;
 
 using env = global::System.Environment;
-using System.Runtime.Serialization.Formatters.Binary;
 
 namespace RunDLL
 {
@@ -92,9 +92,9 @@ namespace RunDLL
         {
             try
             {
-                typeof(Assembly).GetMethod("GetReferencedAssemblies").WarmUp();
+                typeof(Program).GetMethod("LoadAsssembly").WarmUp();
 
-                foreach (MethodInfo nfo in typeof(IEnumerable<>).GetMethods())
+                foreach (MethodInfo nfo in typeof(IEnumerable<>).GetMethods().Union(typeof(Assembly).GetMethods()))
                     if (!nfo.IsAbstract)
                         nfo.WarmUp();
 
@@ -295,7 +295,9 @@ namespace RunDLL
                 print = new Func<Type, object, string>((T, _) => {
                     if (_ == null)
                         return "nullptr";
-                    else if (T.IsPrimitive)
+                    else if ((T.IsPrimitive) ||
+                             (_ is BigInteger) ||
+                             (_ is Complex))
                         return _.ToString();
                     else if (T.IsPointer)
                     {
@@ -334,6 +336,32 @@ namespace RunDLL
                                 return _.var_dump(CheckPrintability("├─└╞═╘"/* <--ibm850 */), depth); //  "├─└╞═╘" /* <--unicode */
                             }
                         }
+                    else if (_ is IEnumerable)
+                    {
+                        IEnumerable ien = _ as IEnumerable;
+                        StringBuilder sb = new StringBuilder();
+                        int cnt = 0;
+
+                        sb.Append('{')
+                          .AppendLine();
+
+                        foreach (object c in ien)
+                        {
+                            sb.AppendFormat("[0x{0:x8}]:", cnt);
+
+                            foreach (string l in print(c.GetType(), c).Split('\r', '\n'))
+                                sb.Append("\n    ")
+                                  .Append(l);
+
+                            sb.AppendLine(",");
+
+                            cnt++;
+                        }
+
+                        return sb.Append('}')
+                                 .Insert(0, "(Size: 0x" + cnt.ToString("x8") + ") ")
+                                 .ToString();
+                    }
                     else
                         return _.ToString();
                 });
@@ -417,7 +445,7 @@ The following options are also defined:
                      a positive integer value between 1 and 7).
     -v, --verbose  - Prints verbose information about the loaded assembly.
     -s, --stdlib   - Includes the .NET standard libraries (`System.Data`
-                     `System` and `System.Core`).
+                     `System`, `System.Core` and `System.Numerics`).
                      Note: The library `mscorlib` is always included.
     -w, --wpflib   - Includes the .NET WPF (Windows Presentation Framework)
                      libraries (`System.Xaml.dll``PresentationCore.dll`,
@@ -648,6 +676,7 @@ Valid usage examples are:
                 asms.Add(typeof(Uri).Assembly);
                 asms.Add(typeof(DataSet).Assembly);
                 asms.Add(typeof(EnumerableQuery).Assembly);
+                asms.Add(typeof(BigInteger).Assembly);
             }
 
             if (CheckForOption(args, "wpflib", "w"))

@@ -21,6 +21,8 @@ rundll.net rundll.test.so TestModule.getunion(float) 42.315
 :: test c++/CLR native pointer support
 rundll.net rundll.test.so TestModule.getpointer(int) 42
 rundll.net rundll.test.so TestModule.getstruct(int,int) 42 315
+:: test F#-support
+rundll.net rundll.test.fs.dll FSTestModule.Fibonacci(int) 10
 
 :: test json loading support
-rundll.net rundll.net.exe rundll.signature.FullString(rundll.signature) @JSON::testparam.json
+:: rundll.net rundll.net.exe rundll.signature.FullString(rundll.signature) @JSON::testparam.json
