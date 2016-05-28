@@ -447,11 +447,16 @@ The following options are also defined:
     -s, --stdlib   - Includes the .NET standard libraries (`System.Data`
                      `System`, `System.Core` and `System.Numerics`).
                      Note: The library `mscorlib` is always included.
-    -w, --wpflib   - Includes the .NET WPF (Windows Presentation Framework)
-                     libraries (`System.Xaml.dll``PresentationCore.dll`,
-                     `WindowsBase.dll`, `PresentationFramework.dll` and
+    -w, --wpflib   - Includes the .NET WPF (Windows Presentation Foundation)
+                     framework libraries (`System.Xaml.dll`, `WindowsBase.dll`
+                     `PresentationCore.dll`, `PresentationFramework.dll` and
                      `WindowsFormsIntegration.dll`).
-    -u, --uclib    - Includes the .NET Unknown6656 core library `uclib`
+    -f, --wformlib - Includes the .NET Windows Forms framework libraries
+                     (`System.Drawing.dll`, `System.Windows.Forms.<*>.dll`).
+    -c, --wcflib   - Includes the .NET WCF (Windows Communication Foundation)
+                     framework libraries (`System.ServiceModel.<*>.dll`).
+    -fs, --fsharp  - Includes the .NET F# framework libraries.
+    -u, --uclib    - Includes the .NET Unknown6656 core library `uclib`.
     -e:, --extlib: - Includes the given .NET library and loads its types. The
                      assembly's file path must be given directly after the
                      colon (`:`). This option can be given multiple times.
@@ -688,9 +693,18 @@ Valid usage examples are:
                 asms.Add(typeof(ConditionCollection).Assembly);
             }
 
-            // TODO : winformlib
-            // TODO : fsharplib
-            // TODO : wcflib
+            if (CheckForOption(args, "wformlib", "f"))
+                asms.AddRange(from string s in new string[] { "System.Windows.Forms.dll", "System.Windows.Forms.DataVisualization.dll", "System.Windows.Forms.DataVisualization.Design.dll", "System.Drawing.dll", "System.Drawing.Design.dll" } select LoadAsssembly(s));
+
+            if (CheckForOption(args, "wcflib", "c"))
+                asms.AddRange(from string s in new string[] { "System.ServiceModel.Activation.dll", "System.ServiceModel.Activities.dll", "System.ServiceModel.Channels.dll", "System.ServiceModel.Discovery.dll", "System.ServiceModel.dll", "System.ServiceModel.Routing.dll", "System.ServiceModel.Web.dll", "System.ServiceProcess.dll" } select LoadAsssembly(s));
+
+            if (CheckForOption(args, "wcflib", "c"))
+                asms.AddRange(from string s in new string[] { "System.ServiceModel.Activation.dll", "System.ServiceModel.Activities.dll", "System.ServiceModel.Channels.dll", "System.ServiceModel.Discovery.dll", "System.ServiceModel.dll", "System.ServiceModel.Routing.dll", "System.ServiceModel.Web.dll", "System.ServiceProcess.dll" } select LoadAsssembly(s));
+
+            if (CheckForOption(args, "fsharp", "fs"))
+                asms.Add(LoadAsssembly("FSharp.Core.dll"));
+
             // TODO : system.security, webext, encryption, ...
 
             if (CheckForOption(args, "uclib", "u"))
@@ -715,7 +729,6 @@ Valid usage examples are:
                           }).Invoke()
                           where tasm != null
                           select tasm);
-            asms.AddRange(from string s in new string[] { /* TODO: ADD MORE ASSEMBLIES HERE */ } select Assembly.LoadFrom(s));
 
             IEnumerable<AssemblyName> asmnames = (from _ in asms select _.GetReferencedAssemblies().Union(new AssemblyName[] { _.GetName() }))
                                                  .SelectMany(_ => _).Distinct();
