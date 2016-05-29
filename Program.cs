@@ -188,6 +188,10 @@ namespace RunDLL
 
             _ok("Member `{0}` loaded from `{1}`.", MemberName(result, constructor), asmname.Name);
 
+            if (!constructor)
+                if (member.IsPInvoke())
+                    _war("The member `[{1}] {0}` is an interface method to a native library. It is advised to call the native library directly using Microsoft's build-in `rundll32.exe`-application instead.", MemberName(result, constructor), asmname.Name);
+
             #endregion
             #region INVOKE METHOD
 
@@ -503,7 +507,7 @@ The following options are also defined:
     -h, --help     - Displays this help page.
                 
 Valid usage examples are:
-    {0} mscorlib.dll System.IntPtr.Size --depth2
+    {0} mscorlib System.IntPtr.Size --depth2
     {0} /root/Documents/library.olb new ImgLib::Image::Rotate()
     {0} \\127.0.0.1\app.exe new MainWindow.//ctor(string) ""foobar"" --stdlib
 ".TrimEnd(), modname, nfo.Name);
@@ -562,6 +566,44 @@ Valid usage examples are:
         }
 
         /// <summary>
+        /// Loads the file based on the given name
+        /// </summary>
+        /// <param name="name">File name</param>
+        /// <returns>File</returns>
+        public static FileInfo LoadFile(string name)
+        {
+            try
+            {
+                FileInfo nfo = new FileInfo(name);
+
+                if (nfo.Exists)
+                    return nfo;
+            } catch { }
+
+            string comppath = env.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) + ";" +
+                              env.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process) + ";" +
+                              env.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine) + ";" +
+                              new FileInfo(Assembly.GetExecutingAssembly().Location).Directory.FullName + ";" +
+                              Directory.GetCurrentDirectory();
+
+            IEnumerable<DirectoryInfo> dirs = (from p in comppath.Split(';')
+                                               let d = new DirectoryInfo(p.Trim())
+                                               where d.Exists
+                                               select d).Union(ADD_PATHS);
+
+            foreach (FileInfo f in dirs.SelectMany(_ => _.GetFiles('*' + name + '*')))
+                try
+                {
+                    FileInfo nfo = new FileInfo(f.FullName);
+
+                    if (nfo.Exists)
+                        return nfo;
+                } catch { }
+
+            return null;
+        }
+
+        /// <summary>
         /// Loads the assembly based on the given name
         /// </summary>
         /// <param name="name">Assembly name</param>
@@ -570,26 +612,10 @@ Valid usage examples are:
         {
             try
             {
-                return Assembly.LoadFrom(name);
+                return Assembly.LoadFrom(LoadFile(name).FullName);
             }
             catch
             {
-                string comppath = env.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) + ";" +
-                                  env.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process) + ";" +
-                                  env.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine);
-
-                IEnumerable<DirectoryInfo> dirs = (from p in comppath.Split(';')
-                                                   let d = new DirectoryInfo(p.Trim())
-                                                   where d.Exists
-                                                   select d).Union(ADD_PATHS);
-
-                foreach (FileInfo f in dirs.SelectMany(_ => _.GetFiles('*' + name + '*')))
-                    try
-                    {
-                        return Assembly.LoadFrom(f.FullName);
-                    }
-                    catch { }
-
                 return null;
             }
         }
@@ -606,7 +632,7 @@ Valid usage examples are:
             if (!targnfo.Exists)
                 try
                 {
-                    targnfo = new FileInfo(LoadAsssembly(args[0]).Location);
+                    targnfo = LoadFile(args[0]);
                 }
                 catch
                 {
@@ -793,6 +819,13 @@ Valid usage examples are:
         /// <returns>Converted object instance</returns>
         public static object ConvertType(object @in, Type type)
         {
+            if ((type == null) && (@in == null))
+                return null;
+            else if (@in == null)
+                return type.IsValueType ? Activator.CreateInstance(type) : null;
+            else if (type == null)
+                return @in;
+
             if (type.IsArray)
             {
                 Array src = @in as Array;
@@ -1063,8 +1096,8 @@ Valid usage examples are:
 
                         return char.Parse(m.Groups["value"].ToString());
                     })
-                    .Case(LINQExtensions.GetTypes<float, double, decimal>(), (_, T) => decimal.Parse(argv))
-                    .Case(LINQExtensions.GetTypes<sbyte, byte, short, ushort, int, uint, long, ulong>(), (_, T) => argv.Contains('-') ? (object)long.Parse(argv) : (object)ulong.Parse(argv))
+                    .Case<float, double, decimal>((_, T) => decimal.Parse(argv))
+                    .Case<sbyte, byte, short, ushort, int, uint, long, ulong>((_, T) => argv.Contains('-') ? (object)long.Parse(argv) : (object)ulong.Parse(argv))
                     .Case<bool>((_, T) => isnum ? long.Parse(argv) != 0L : isflt ? decimal.Parse(argv) != 0m : bool.Parse(argv))
                     .Case(T => T.IsArray, (_, T) => {
                         Type t = T.GetElementType();
@@ -1148,8 +1181,25 @@ Valid usage examples are:
                     .Case<DirectoryInfo>(_ => new DirectoryInfo(argv))
                     .Case<FileInfo>(_ => new FileInfo(argv))
                     .Case<Uri>(_ => new Uri(argv))
-                    .Default((_, T) => argv == "new" ? Activator.CreateInstance(T) : null)
                     // TODO : Add Vector + Complex parsing
+                    .Default((_, T) => {
+                        if (argv == "new")
+                            return Activator.CreateInstance(T);
+                        else if (T.IsAssignableFrom(typeof(List<>)))
+                        {
+                            Type t = T.GetNestedTypes()[0];
+                            object o = null;
+
+                            ParseParameter(argv, t.MakeArrayType(), out o);
+
+                            object[] arr = ConvertType(o, typeof(object[])) as object[];
+
+                            return arr.ToList();
+                        }
+                        // TODO : Fix IEnumerable<> parsing
+
+                        return null;
+                    })
                     [type, argv];
 
                 return true;

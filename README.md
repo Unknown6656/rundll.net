@@ -24,7 +24,7 @@ with the following parameters:
 * `'new'`<br/>
   The [`new`](https://msdn.microsoft.com/en-us/library/fa0ab757.aspx)-keyword is optional, but must be passed if the method in question is not a static one (without the quotes).
 * `method`<br/>
-  Either a [fully qualified namespace, class and method signature](https://msdn.microsoft.com/en-us/library/dfb3cx8s.aspx) or the name of the class (if unique) followed by the unique method name (or optinal parameters to identify the method). Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to address the type's instance  constructor, static constructor or destructor. Use `.//op____` to invoke an operator, where `____` represents the operator token.
+  Either a [fully qualified namespace, class and method signature](https://msdn.microsoft.com/en-us/library/dfb3cx8s.aspx) or the name of the class (if unique) followed by the unique method name (or optinal parameters to identify the method).<br/>The member name must be followed by parentheses (`(` and `)`) if the member in question is a function. Any parameter type musst be given inside the parentheses, seperated by commas (`,`). A [`ref-`](https://msdn.microsoft.com/en-us/library/14akc2c7.aspx) or [`out-`](https://msdn.microsoft.com/en-us/library/t3c3bfhx.aspx)Parameter must by given with a leading ampersand (`&`) or by the leading keywords `ref ` or `out ` _(Do please note that the ampersand must be escaped when used inside a scirpt or command line on Windows and Unix)_. Parameters which have been marked as [`params`](https://msdn.microsoft.com/en-us/library/w5zay9db.aspx) will be interpreted as regular arrays.<br/>Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to address the type's instance  constructor, static constructor or destructor. Use `.//op____` to invoke an operator, where `____` represents the operator token. Use `.//this[...]` to access the type's indexer property with the given parameter types `...` _(note the usage of brackets instead of parentheses)_.
 * `arguments`<br/>
   An optional list of arguments (separated by commas without any whitespace), which will be passed as method parameters to the given method.<br/>
 A serilaized XML- or JSON-string can be passed with `@XML:""....""` or `@JSON:""....""`, where `....` is the XML- or JSON-string in question. If the parameter shall bede serialized from a JSON- or XML-file, the argument shall be passed as `@JSON::""....""` or `@XML::""....""`, where `....` represents the path to the given JSON- or XML-file.
@@ -87,7 +87,9 @@ The following operatore tokens are defined:
                 
 Valid usage examples are:
 ```
-    rundll.net mscorlib.dll System.IntPtr.Size -d2
+    rundll.net mscorlib System.IntPtr.Size -d2
     rundll.net /root/Documents/library.olb new ImgLib::Image::Rotate()
     rundll.net \\127.0.0.1\Shares\Public\app.exe new MainWindow.//ctor(string) ""foobar"" --stdlib
 ```
+
+The batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/master/test.bat) contains a list of test cases with different usage syntaxes, which can be used as a guide.
