@@ -4,3 +4,9 @@ B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\Models\bin\Debug
 B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\Models\bin\Debug\rundll.test.so
 B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\Models\bin\Debug\uclib.dll
 B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\Models\obj\Debug\Models.modelprojResolveAssemblyReference.cache
+B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\bin\Debug\test.bat
+B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\bin\Debug\rundll.net.exe
+B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\bin\Debug\rundll.test.fs.dll
+B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\bin\Debug\rundll.test.so
+B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\bin\Debug\uclib.dll
+B:\Projects.VisualStudio\Unknown6656 Core Library\RunDLL\Models\obj\Debug\Models.modelprojResolveAssemblyReference.cache

@@ -1,5 +1,4 @@
 ﻿+ Add argument generic/nested analyzation
-* Add argument pointer creation on native value types
-* Add other TypePattern cases
 * Add more core assemblies (security, webextensions ?)
 * Better P/Invoke support (direct call/invokation ?)
+* Add Vector- & Complex-parsing

@@ -31,6 +31,7 @@ using env = global::System.Environment;
 
 namespace RunDLL
 {
+
     /// <summary>
     /// The application's static class
     /// </summary>
@@ -107,7 +108,7 @@ namespace RunDLL
             }
             catch (Exception ex)
             {
-                return _err("An internal error occured:\n\t{0}\n{1}\n{2}\nHRESULT 0x{3:x8}\nSee `{4}` for more information...", ex.Message, ex.StackTrace, ex.Data.ToDebugString(), ex.HResult, ex.HelpLink) + 1;
+                return _err(PrintException(ex, 0));
             }
         }
 
@@ -171,7 +172,7 @@ namespace RunDLL
             if (@class == null)
                 return 0;
 
-            _ok("Type `{0}` loaded from `{1}`.", @class.FullName, asmname.Name);
+            _ok("Type `{0}` loaded from `{1}`.", @class.FullName.Replace(".", "::"), asmname.Name);
 
             bool constructor;
             object result = FetchMethod(@class, sig.Member, sig.IsProperty, ref @static, out constructor, sig.Arguments);
@@ -205,7 +206,9 @@ namespace RunDLL
             for (int i = 0, l = pnfos.Length; i < l; i++)
                 try
                 {
-                    cparameters[i] = ConvertType(parameters[i], pnfos[i].ParameterType);
+                    Type T = pnfos[i].ParameterType;
+
+                    cparameters[i] = ConvertType(parameters[i], T.PassedByReference() ? T.GetElementType() : T);
                 }
                 catch
                 {
@@ -235,13 +238,13 @@ namespace RunDLL
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("An error occured:");
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("[HResult 0x{2:x8}] {0}\n{1}\n{4}\n\nSee `{3}` for more information...", ex.Message, ex.StackTrace, ex.HResult, ex.HelpLink, ex.Data.ToDebugString());
+                Console.WriteLine(PrintException(ex, 0));
                 Console.ForegroundColor = ConsoleColor.White;
 
                 return 0;
             }
 
-            PrintReturnValue(args, constructor, @static, @return, @class, member);
+            PrintReturnValue(args, constructor, @static, @return, @class, member, cmember, cparameters);
 
             #endregion
             #region GC COLLECTION
@@ -268,6 +271,26 @@ namespace RunDLL
         }
 
         /// <summary>
+        /// Prints the given exception
+        /// </summary>
+        /// <param name="_">Exception</param>
+        /// <param name="i">Indentation level</param>
+        /// <returns>Print string</returns>
+        internal static string PrintException(Exception _, int i = 0)
+        {
+            return string.Join("\n", from s in string.Format("[HResult 0x{2:x8} {2}] '{0}'\n{5}\n{1}\n{4}\n{6}{3}",
+                                                             _.Message,
+                                                             _.StackTrace,
+                                                             _.HResult,
+                                                            (_.HelpLink ?? "").Length > 0 ? "\nSee `" + _.HelpLink + "` for more information..." : "",
+                                                             _.Data.ToDebugString(),
+                                                             _.TargetSite.GetCPPSignature(),
+                                                             _.InnerException == null ? "" : "Inner exception:\n" + PrintException(_.InnerException, i + 1) + "\n")
+                                                     .Split('\n')
+                                     select new string(' ', i * 4) + s);
+        }
+
+        /// <summary>
         /// Prints the given return value
         /// </summary>
         /// <param name="args">Command line arguments?</param>
@@ -276,7 +299,9 @@ namespace RunDLL
         /// <param name="return">Method return value</param>
         /// <param name="class">Parent type</param>
         /// <param name="member">Member information</param>
-        public static void PrintReturnValue(string[] args, bool constructor, bool @static, object @return, Type @class, MethodInfo member)
+        /// <param name="cmember">Constructor member information</param>
+        /// <param name="cparameters">The passed invocation parameters</param>
+        public static void PrintReturnValue(string[] args, bool constructor, bool @static, object @return, Type @class, MethodInfo member, ConstructorInfo cmember, object[] cparameters)
         {
             if (!(constructor && @static))
             {
@@ -312,13 +337,13 @@ namespace RunDLL
                     else if (T.IsSerializable)
                         try
                         {
-                            return new JavaScriptSerializer().Serialize(@return).FormatJSON();
+                            return T.GetCPPTypeString() + ": " + new JavaScriptSerializer().Serialize(_).FormatJSON();
                         }
                         catch
                         {
                             try
                             {
-                                return Serialization.Serialize(@return).FormatXML();
+                                return Serialization.Serialize(_).FormatXML();
                             }
                             catch
                             {
@@ -349,7 +374,7 @@ namespace RunDLL
                         {
                             sb.AppendFormat("[0x{0:x8}]:", cnt);
 
-                            foreach (string l in print(c.GetType(), c).Split('\r', '\n'))
+                            foreach (string l in Regex.Replace(print(c.GetType(), c), @"[\r\n]+", "\n").Split('\n'))
                                 sb.Append("\n    ")
                                   .Append(l);
 
@@ -367,6 +392,21 @@ namespace RunDLL
                 });
 
                 Console.WriteLine(print(constructor ? @class : member.ReturnType, @return));
+                
+                ParameterInfo[] pnfo = constructor ? cmember.GetParameters() : member.GetParameters();
+                List<object> cparams = new List<object>();
+
+                for (int i = 0, l = Math.Min(pnfo.Length, cparameters.Length); i < l; i++)
+                    if (pnfo[i].Attributes.HasFlag(ParameterAttributes.Out) || pnfo[i].ParameterType.PassedByReference())
+                        cparams.Add(cparameters[i]);
+
+                if (cparams.Count > 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.WriteLine("\nParameters passed by reference:");
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine(print(typeof(IEnumerable<object>), cparams));
+                }
             }
 
             Console.WriteLine("\n------------------------------------------------------------------------\n");
@@ -802,7 +842,7 @@ Valid usage examples are:
                                         select t;
 
             if (classes.Count() == 0)
-                _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm, asmname.Name, asmname.Version);
+                _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm.Replace(".", "::"), asmname.Name, asmname.Version);
             else if (classes.Count() > 1)
             {
                 IEnumerable<Type> oclasses = classes;
@@ -820,7 +860,7 @@ Valid usage examples are:
 
                     if (classes.Count() != 1)
                     {
-                        _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm, asmname.Name, asmname.Version);
+                        _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm.Replace(".", "::"), asmname.Name, asmname.Version);
 
                         Console.ForegroundColor = ConsoleColor.Yellow;
                         Console.WriteLine("However, the following types have been found, which partly match the given type name:");
@@ -829,7 +869,7 @@ Valid usage examples are:
                         const int ocmaxlen = 24;
 
                         foreach (Type t in oclasses.Take(ocmaxlen))
-                            Console.WriteLine("    {0}", t.FullName);
+                            Console.WriteLine("    {0}", t.FullName.Replace(".", "::"));
 
                         if (oclen > ocmaxlen)
                         {
@@ -839,7 +879,7 @@ Valid usage examples are:
 
                             if (char.ToLower(Console.ReadKey(false).KeyChar) == 'y')
                                 foreach (Type t in oclasses.Skip(ocmaxlen))
-                                    Console.WriteLine("    {0}", t.FullName);
+                                    Console.WriteLine("    {0}", t.FullName.Replace(".", "::"));
                         }
 
                         Console.ForegroundColor = ConsoleColor.White;
@@ -850,10 +890,10 @@ Valid usage examples are:
                 else if (classes.Count() > 1)
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("The type `{0}` could not be determined, as it is not unique:");
+                    Console.WriteLine("The type `{0}` could not be determined, as it is not unique:", @class.Replace(".", "::"));
 
                     foreach (Type t in classes)
-                        Console.WriteLine("    [{1}]{0}", t.FullName, t.Assembly.CodeBase);
+                        Console.WriteLine("    [{1}]{0}", t.FullName.Replace(".", "::"), t.Assembly.CodeBase);
 
                     Console.ForegroundColor = ConsoleColor.White;
                 }
@@ -950,7 +990,7 @@ Valid usage examples are:
                     {
                         return _err("The given string does not seem to be a valid JSON string.{0}", helpstr);
                     }
-                else if (!ParseParamter(argv, pnfo.ParameterType, out param))
+                else if (!ParseParameter(argv, pnfo.ParameterType, out param))
                     return _err("The given argument `{0}` could not be interpreted as `{1}`.", argv.Trim(), pnfo.ParameterType.GetCPPTypeString());
 
                 parameters.Add(param);
@@ -966,7 +1006,7 @@ Valid usage examples are:
         /// <param name="type">Parameter type</param>
         /// <param name="param">Parsed parameter value</param>
         /// <returns>Indicates, whether the parsing was successfull</returns>
-        public static bool ParseParamter(string argv, Type type, out dynamic param)
+        public static bool ParseParameter(string argv, Type type, out dynamic param)
         {
             bool isnum = false;
             bool isflt = false;
@@ -976,7 +1016,7 @@ Valid usage examples are:
             {
                 if ((m = Regex.Match(argv, @"^\s*(?<sign>\+|\-)?\s*(0x(?<value>[0-9a-f]+)h?)\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
                 {
-                    ulong ul = ulong.Parse(m.Groups["value"].ToString(), NumberStyles.HexNumber | NumberStyles.AllowHexSpecifier);
+                    BigInteger ul = BigInteger.Parse(m.Groups["value"].ToString(), NumberStyles.HexNumber | NumberStyles.AllowHexSpecifier);
 
                     argv = (m.Groups["sign"].ToString().Contains('-') ? "-" : "") + ul;
                     isnum = true;
@@ -1005,6 +1045,14 @@ Valid usage examples are:
                 }
 
                 param = new TypeMatcher<object>()
+                    .Case(T => T.PassedByReference(), (_, T) => {
+                        Type t = T.GetElementType();
+                        object v = null;
+
+                        ParseParameter(argv, t, out v);
+
+                        return ConvertType(v, t);
+                    })
                     .Case(T => argv.ToLower().Trim() == "null", _ => null)
                     .Case<string>(argv)
                     .Case<char>(_ => {
@@ -1036,7 +1084,7 @@ Valid usage examples are:
                             {
                                 object elem;
 
-                                if (ParseParamter(s, t, out elem))
+                                if (ParseParameter(s, t, out elem))
                                     obj.Add(elem);
                                 else
                                     throw null;
@@ -1052,7 +1100,7 @@ Valid usage examples are:
 
                         if ((argv = argv.Trim()).StartsWith("&"))
                         {
-                            ParseParamter(argv.Remove(0, 1), typeof(long), out v);
+                            ParseParameter(argv.Remove(0, 1), typeof(long), out v);
 
                             return Pointer.Box((long*)(long)v, T);
                         }
@@ -1060,19 +1108,20 @@ Valid usage examples are:
                         {
                             Type t = T.GetElementType();
 
-                            ParseParamter(argv, t, out v);
+                            if (ParseParameter(argv, t, out v))
+                                if (t.IsValueType)
+                                {
+                                    byte[] resv = new byte[Marshal.SizeOf(t)];
 
-                            if (t.IsValueType)
-                            {
-                                
+                                    fixed (byte* ptr = resv)
+                                    {
+                                        Marshal.StructureToPtr(v, (IntPtr)ptr, false);
 
-
-                                // TODO : CREATE POINTER
-
-
-                            }
-                            else
-                                v = GCHandle.Alloc(v);
+                                        return Pointer.Box((void*)ptr, t);
+                                    }
+                                }
+                                else
+                                    v = GCHandle.Alloc(v);
 
                             return v;
                         }
@@ -1090,12 +1139,18 @@ Valid usage examples are:
                             Type _t = Nullable.GetUnderlyingType(T);
                             object o = null;
 
-                            ParseParamter(argv, _t, out o);
+                            ParseParameter(argv, _t, out o);
 
                             return o;
                         }
                     })
-                    [type, null];
+                    .Case<BigInteger>(_ => BigInteger.Parse(argv))
+                    .Case<DirectoryInfo>(_ => new DirectoryInfo(argv))
+                    .Case<FileInfo>(_ => new FileInfo(argv))
+                    .Case<Uri>(_ => new Uri(argv))
+                    .Default((_, T) => argv == "new" ? Activator.CreateInstance(T) : null)
+                    // TODO : Add Vector + Complex parsing
+                    [type, argv];
 
                 return true;
             }
@@ -1247,13 +1302,13 @@ Valid usage examples are:
                     if (match.Count() == 0)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The member `{0}` could not be found inside the type `{1}::{2}`.", indexer ? "__index" : name, asmname.Name, tp.FullName);
+                        Console.WriteLine("The member `{0}` could not be found inside the type `[{1}]{2}`.", indexer ? "__index" : name, asmname.Name, tp.FullName.Replace(".", "::"));
                         Console.ForegroundColor = ConsoleColor.White;
                     }
                     else if (match.Count() > 1)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The member `{0}` does match mulitple members inside `{1}::{2}`:", indexer ? "__index" : name, asmname.Name, tp.FullName);
+                        Console.WriteLine("The member `{0}` does match mulitple members inside `[{1}]{2}`:", indexer ? "__index" : name, asmname.Name, tp.FullName.Replace(".", "::"));
                         Console.ForegroundColor = ConsoleColor.Yellow;
 
                         foreach (MethodInfo mnfo in match)
@@ -1267,7 +1322,7 @@ Valid usage examples are:
             else
             {
                 Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("The member `{0}` could not be found inside the type `{1}::{2}`.", indexer ? "__index" : name, asmname.Name, tp.FullName);
+                Console.WriteLine("The member `{0}` could not be found inside the type `[{1}]{2}`.", indexer ? "__index" : name, asmname.Name, tp.FullName.Replace(".", "::"));
                 Console.ForegroundColor = ConsoleColor.White;
             }
 
@@ -1305,7 +1360,7 @@ Valid usage examples are:
                         @static = _war("The keyword `new` is missing.") is string; // constant false
 
                     if (nfo == null)
-                        _err("The type `{1}::{0}` has no destructor method defined.", tp.GetCPPTypeString(), asmname.Name);
+                        _err("The type `[{1}] {0}` has no destructor method defined.", tp.GetCPPTypeString(), asmname.Name);
 
                     return nfo;
                 }
@@ -1314,7 +1369,7 @@ Valid usage examples are:
                     ConstructorInfo nfo = tp.GetConstructors(BindingFlags.Static).FirstOrDefault();
 
                     if (nfo == null)
-                        return _err("The type `{1}::{0}` has no static constructor method defined.", tp.GetCPPTypeString(), asmname.Name).NULL();
+                        return _err("The type `[{1}] {0}` has no static constructor method defined.", tp.GetCPPTypeString(), asmname.Name).NULL();
                     else
                     {
                         if (!@static)
@@ -1340,7 +1395,7 @@ Valid usage examples are:
                     name = name.Remove(0, 2);
 
                     if (!OPERATORS.ContainsKey(name))
-                        return _err("The static operator `{0}` could not be found inside the type `{1}::{2}`", name, asmname.Name, tp.GetCPPTypeString()).NULL();
+                        return _err("The static operator `{0}` could not be found inside the type `[{1}] {2}`", name, asmname.Name, tp.GetCPPTypeString()).NULL();
                     else
                         name = OPERATORS[name];
 
@@ -1352,7 +1407,7 @@ Valid usage examples are:
                 constructor = true;
 
                 if (nfos.Length == 0)
-                    _err("The type `{1}::{0}` has no constructor method(s) defined.", tp.GetCPPTypeString(), asmname.Name);
+                    _err("The type `[{1}] {0}` has no constructor method(s) defined.", tp.GetCPPTypeString(), asmname.Name);
                 else
                 {
                     if (@static)
@@ -1389,9 +1444,9 @@ Valid usage examples are:
                         if (match.Length != 1)
                         {
                             Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine("No constructor could be found inside the type `{1}::{0}`, which matches the given parameter list.", tp.GetCPPTypeString(), asmname.Name);
+                            Console.WriteLine("No constructor could be found inside the type `[{1}] {0}`, which matches the given parameter list.", tp.GetCPPTypeString(), asmname.Name);
                             Console.ForegroundColor = ConsoleColor.Yellow;
-                            Console.WriteLine("However, the following constructors are defined inside the type `{1}::{0}`:");
+                            Console.WriteLine("However, the following constructors are defined inside the type `[{1}] {0}`:");
 
                             for (int i = 0; i < nfos.Length; i++)
                                 Console.WriteLine("    {0}", nfos[i].GetCPPSignature());

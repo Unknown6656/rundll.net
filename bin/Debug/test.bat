@@ -15,6 +15,10 @@ rundll.net mscorlib.dll IntPtr::Size
 rundll.net uclib.dll ConstantMathFunction:://opimplicit(decimal) 4
 :: test other operators
 
+:: test P/Invoke ref- and out-support
+rundll.net uclib.dll CoreLib.Win32.GetMasterVolume(&float) 0
+rundll.net uclib.dll CoreLib.Win32.joyGetPosEx(int,&JOYINFOEX) 0 new
+rundll.net uclib.dll CoreLib.Win32.GetBinaryType(string,&BinaryType) "rundll.net.exe" new
 :: test C++/CLR-support
 rundll.net rundll.test.so TestModule::length(string) "foo/bar" --verbose
 rundll.net rundll.test.so TestModule.getunion(float) 42.315
