@@ -1,3 +1,2 @@
 ﻿+ Add argument generic/nested analyzation and support
 * Add more core assemblies (security, webextensions ?)
-* Add Vector- & Complex-parsing

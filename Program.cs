@@ -14,6 +14,7 @@ using Microsoft.CSharp;
 using System.Numerics;
 using System.Windows;
 using System.CodeDom;
+using System.Drawing;
 using System.Data;
 using System.Linq;
 using System.Text;
@@ -25,9 +26,14 @@ using System;
 using CoreLib.Conversion;
 using CoreLib.Generic;
 using CoreLib.Runtime;
+using CoreLib.Math;
 using CoreLib;
 
 using env = global::System.Environment;
+using win = global::System.Drawing;
+using wpf = global::System.Windows;
+using num = global::System.Numerics;
+using cor = global::CoreLib.Math;
 
 namespace RunDLL
 {
@@ -37,6 +43,7 @@ namespace RunDLL
     /// </summary>
     public unsafe static class Program
     {
+        internal const string STR_REGEX_FLOAT = @"\s*(?<sign>\+|\-)?\s*(?<value>[0-9]*(\.|\,)?[0-9]+([e][\-\+]?[0-9]+)?)(d|f|m)?\s*";
         internal const string STR_REGEX_OPBASE = @"(true|false|implicit|explicit|\+\+|--|\|\||&&|<<=?|>>=?|->|~|[+-=!^<>*&|%]=?)";
         internal const string STR_REGEX_PARAMBASE = @"\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*";
         internal static readonly Regex REGEX_TYPE = new Regex(@"(?<namespace>(\w+\.)*)(?<class>\w+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -326,7 +333,7 @@ namespace RunDLL
                         return "nullptr";
                     else if ((T.IsPrimitive) ||
                              (_ is BigInteger) ||
-                             (_ is Complex))
+                             (_ is num.Complex))
                         return _.ToString();
                     else if (T.IsPointer)
                     {
@@ -1068,7 +1075,7 @@ Valid usage examples are:
                     argv = (m.Groups["sign"].ToString().Contains('-') ? "-" : "") + ul;
                     isnum = true;
                 }
-                else if ((m = Regex.Match(argv, @"^\s*(?<sign>\+|\-)?\s*(?<value>[0-9]*(\.|\,)?[0-9]+([e][\-\+]?[0-9]+)?)(d|f|m)?\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
+                else if ((m = Regex.Match(argv, "^" + STR_REGEX_FLOAT + "$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
                 {
                     decimal dec = decimal.Parse(m.Groups["value"].ToString().Replace('.', ','));
 
@@ -1181,7 +1188,50 @@ Valid usage examples are:
                     .Case<DirectoryInfo>(_ => new DirectoryInfo(argv))
                     .Case<FileInfo>(_ => new FileInfo(argv))
                     .Case<Uri>(_ => new Uri(argv))
-                    // TODO : Add Vector + Complex parsing
+                    .Case<num.Complex, wpf.Size, wpf.Point, Vector2D, cor.Complex>((_, t) => {
+                        if ((m = Regex.Match(argv, @"$\s*\(\s*(?<real>[^\s]+)\s*\,\s*(?<imag>[^\s]+)\s*\)\s*")).Success)
+                        {
+                            object d1, d2;
+
+                            if (ParseParameter(m.Groups["real"].ToString(), typeof(double), out d1) &&
+                                ParseParameter(m.Groups["imag"].ToString(), typeof(double), out d2))
+                                return t == typeof(wpf.Size) ? new wpf.Size((double)d1, (double)d2) as object :
+                                    t == typeof(wpf.Point) ? new wpf.Point((double)d1, (double)d2) as object :
+                                    t == typeof(num.Complex) ? new num.Complex((double)d1, (double)d2) as object :
+                                    t == typeof(Vector2D) ? new Vector2D((double)d1, (double)d2) as object :
+                                                            new cor.Complex((double)d1, (double)d2) as object;
+                        }
+
+                        return null;
+                    })
+                    .Case<win.Size, win.Point>((_, t) => {
+                        if ((m = Regex.Match(argv, @"$\s*\(\s*(?<x>[^\s]+)\s*\,\s*(?<y>[^\s]+)\s*\)\s*")).Success)
+                        {
+                            object i1, i2;
+
+                            if (ParseParameter(m.Groups["x"].ToString(), typeof(int), out i1) &&
+                                ParseParameter(m.Groups["y"].ToString(), typeof(int), out i2))
+                                return t == typeof(win.Size) ? new win.Size((int)i1, (int)i2) as object
+                                                             : new win.Point((int)i1, (int)i2) as object;
+                        }
+
+                        return null;
+                    })
+                    .Case<SizeF, PointF>((_, t) => {
+                        if ((m = Regex.Match(argv, @"$\s*\(\s*(?<x>[^\s]+)\s*\,\s*(?<y>[^\s]+)\s*\)\s*")).Success)
+                        {
+                            object i1, i2;
+
+                            if (ParseParameter(m.Groups["x"].ToString(), typeof(float), out i1) &&
+                                ParseParameter(m.Groups["y"].ToString(), typeof(float), out i2))
+                                return t == typeof(SizeF) ? new SizeF((float)i1, (float)i2) as object
+                                                          : new PointF((float)i1, (float)i2) as object;
+                        }
+
+                        return null;
+                    })
+                    .Case<MathFunction>(_ => new MathFunction(argv))
+                    .Case<ConstantMathFunction>(_ => new ConstantMathFunction(decimal.Parse(argv)))
                     .Default((_, T) => {
                         if (argv == "new")
                             return Activator.CreateInstance(T);
@@ -1198,7 +1248,7 @@ Valid usage examples are:
                         }
                         // TODO : Fix IEnumerable<> parsing
 
-                        return null;
+                        return argv;
                     })
                     [type, argv];
 
@@ -1496,7 +1546,7 @@ Valid usage examples are:
                             Console.ForegroundColor = ConsoleColor.Red;
                             Console.WriteLine("No constructor could be found inside the type `[{1}] {0}`, which matches the given parameter list.", tp.GetCPPTypeString(), asmname.Name);
                             Console.ForegroundColor = ConsoleColor.Yellow;
-                            Console.WriteLine("However, the following constructors are defined inside the type `[{1}] {0}`:");
+                            Console.WriteLine("However, the following constructors are defined inside the type `[{1}] {0}`:", tp.GetCPPTypeString(), asmname.Name);
 
                             for (int i = 0; i < nfos.Length; i++)
                                 Console.WriteLine("    {0}", nfos[i].GetCPPSignature());
