@@ -29,7 +29,7 @@
       <SubType>Content</SubType>
       <DependentUpon>Program.Main.sequencediagram</DependentUpon>
     </Content>
-    <Content Include="RunDLL.cd">
+    <Content Include="RundDLL.cd">
       <SubType>Content</SubType>
     </Content>
     <Content Include="RunDLL.dgml">

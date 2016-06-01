@@ -1,2 +1,1 @@
-﻿+ Add argument generic/nested analyzation and support
-* Add more core assemblies (security, webextensions ?)
+﻿+ Add full argument generic/nested analyzation and support

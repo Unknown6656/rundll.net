@@ -1,9 +1,7 @@
-﻿
-::---------------------------------------------------------------------------------------------------------------------
+﻿::---------------------------------------------------------------------------------------------------------------------
 ::------------------------                   COPYRIGHT (C) 2016, UNKNOWN6656                   ------------------------
 ::---------------------------------------------------------------------------------------------------------------------
 @echo off
-cls
 title rundll.net test methods
 
 if "%1" == "valid" (
@@ -11,25 +9,25 @@ if "%1" == "valid" (
 	goto valid
 )
 if "%1" == "invalid" (
-	cls
 	goto error
 )
 if "%1" == "fail" (
-	cls
 	goto error
 )
 if "%1" == "all" (
-	cls
 	goto error
 )
 
 :usage
+cls
+echo.
 echo Usage: %0 ^<valid^>   for valid tests
 echo or     %0 ^<fail^>    for invalid tests
 echo or     %0 ^<all^>     for all tests
 goto end
 ::--------------------------------- INVALID tests (and syntax error test) follow here ---------------------------------
 :error
+cls
 rundll.net --foo
 rundll.net /dev/null 0
 rundll.net kernel32 0
@@ -57,6 +55,7 @@ rundll.net mscorlib IntPtr::Size
 rundll.net uclib ConstantMathFunction:://opimplicit(decimal) 4
 :: test operators
 rundll.net uclib MathFunction.//op*(MathFunction,MathFunction) "2x^3-7" "2-x^2"
+rundll.net uclib MathFunction.//op/(MathFunction,MathFunction) "x^2-2x+1" "x+1"
 :: test complex parsing
 rundll.net uclib Complex.//op+(Complex,Complex) (1,0) (4,2)
 

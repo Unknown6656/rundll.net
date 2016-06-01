@@ -656,6 +656,8 @@ Valid usage examples are:
                 }
                 catch
                 {
+                    // check for assemblies in the PE resource table (?)
+                    // check for assemblies in the ELF resource table (?)
                     return _err("The file `{0}` does not seem to contain a valid PE/COFF header.", targnfo);
                 }
 
@@ -1200,6 +1202,19 @@ Valid usage examples are:
                                     t == typeof(num.Complex) ? new num.Complex((double)d1, (double)d2) as object :
                                     t == typeof(Vector2D) ? new Vector2D((double)d1, (double)d2) as object :
                                                             new cor.Complex((double)d1, (double)d2) as object;
+                        }
+
+                        return null;
+                    })
+                    .Case<Vector3D>((_, t) => {
+                        if ((m = Regex.Match(argv, @"$\s*\(\s*(?<x>[^\s]+)\s*\,\s*(?<y>[^\s]+)\s*,\s*(?<z>[^\s]+)\s*\)\s*")).Success)
+                        {
+                            object d1, d2, d3;
+
+                            if (ParseParameter(m.Groups["x"].ToString(), typeof(double), out d1) &&
+                                ParseParameter(m.Groups["y"].ToString(), typeof(double), out d2) &&
+                                ParseParameter(m.Groups["z"].ToString(), typeof(double), out d3))
+                                return new Vector3D((double)d1, (double)d2, (double)d3);
                         }
 
                         return null;
