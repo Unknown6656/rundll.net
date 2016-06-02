@@ -76,4 +76,7 @@ rundll.net rundll.test.fs FSTestModule.Fibonacci(int) 20
 :: test json loading support
 :: rundll.net rundll.net.exe rundll.signature.FullString(rundll.signature) @JSON::testparam.json
 
+:: test generic support
+uclib CommonLanguageRuntime.GetCPPTypeString(System.Type) "System.Collections.Generic.List<string>"
+
 :end

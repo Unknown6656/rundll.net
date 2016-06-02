@@ -864,6 +864,7 @@ Valid usage examples are:
                 }
                 catch
                 {
+
                     TypeConverter tp = TypeDescriptor.GetConverter(type);
 
                     return tp.ConvertFrom(@in);
@@ -1249,11 +1250,6 @@ Valid usage examples are:
                             return v;
                         }
                     })
-                    .Case<Type>(_ => {
-                        m = REGEX_TYPE.Match(argv);
-
-                        return FetchType(m.Groups["namespace"].ToString(), m.Groups["class"].ToString());
-                    })
                     .Case(T => Nullable.GetUnderlyingType(T) != null, (_, T) => {
                         if (Nullable.Equals(_, null) || (argv.ToLower() == "null"))
                             return null;
@@ -1267,6 +1263,7 @@ Valid usage examples are:
                             return o;
                         }
                     })
+                    .Case<Type>(_ => FetchGenericType(argv))
                     .Case<BigInteger>(_ => BigInteger.Parse(argv))
                     .Case<DirectoryInfo>(_ => new DirectoryInfo(argv))
                     .Case<FileInfo>(_ => new FileInfo(argv))
