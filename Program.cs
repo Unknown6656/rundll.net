@@ -34,6 +34,7 @@ using win = global::System.Drawing;
 using wpf = global::System.Windows;
 using num = global::System.Numerics;
 using cor = global::CoreLib.Math;
+using System.ComponentModel;
 
 namespace RunDLL
 {
@@ -43,6 +44,7 @@ namespace RunDLL
     /// </summary>
     public unsafe static class Program
     {
+        internal const string STR_REGEX_G_TYPEBASE = @"(?<class>([\w]+\.?)+)(\<(?<params>(.+\s*(\,\s*)?)+)\>)?";
         internal const string STR_REGEX_FLOAT = @"\s*(?<sign>\+|\-)?\s*(?<value>[0-9]*(\.|\,)?[0-9]+([e][\-\+]?[0-9]+)?)(d|f|m)?\s*";
         internal const string STR_REGEX_OPBASE = @"(true|false|implicit|explicit|\+\+|--|\|\||&&|<<=?|>>=?|->|~|[+-=!^<>*&|%]=?)";
         internal const string STR_REGEX_PARAMBASE = @"\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*";
@@ -98,6 +100,8 @@ namespace RunDLL
         /// <returns>Application exit code</returns>
         public static int Main(string[] args)
         {
+            var t = FetchGenericType("apex<kek, foo<bar, buzz>, lolz>");
+
             try
             {
                 typeof(Program).GetMethod("LoadAsssembly").WarmUp();
@@ -849,7 +853,16 @@ Valid usage examples are:
             // else if (type.IsNested)
             //     ;
             else
-                return Convert.ChangeType(@in, type);
+                try
+                {
+                    return Convert.ChangeType(@in, type);
+                }
+                catch
+                {
+                    TypeConverter tp = TypeDescriptor.GetConverter(type);
+
+                    return tp.ConvertFrom(@in);
+                }
         }
         
         /// <summary>
@@ -946,6 +959,60 @@ Valid usage examples are:
                 return classes.First();
 
             return null;
+        }
+
+        /// <summary>
+        /// Returns the generic/nested type associated withe the given type string
+        /// </summary>
+        /// <param name="typestring">Type string</param>
+        /// <returns>Type</returns>
+        public static Type FetchGenericType(string typestring)
+        {
+            Match m;
+
+            typestring = typestring.Replace(".", "::").Trim();
+
+            if ((m = Regex.Match(typestring, STR_REGEX_G_TYPEBASE)).Success)
+            {
+                string cls = m.Groups["class"].ToString();
+                string par = m.Groups["params"].Success ? m.Groups["params"].ToString() : "";
+
+                List<string> paratypes = new List<string>();
+
+                int s = 0, e = 0, c = 0;
+
+                for (int i = 0, l = par.Length; i < l; i++)
+                    switch (par[i])
+                    {
+                        case ',':
+                            if (c > 0)
+                                goto default;
+
+                            paratypes.Add(par.Substring(s, e));
+
+                            s = i + 1;
+                            e = 0;
+                            break;
+                        case '<': ++c;
+                            goto default;
+                        case '>': --c;
+                            goto default;
+                        default: ++e;
+                            break;
+                    }
+
+                paratypes.Add(par.Substring(s, e));
+
+                IEnumerable<Type> @params = from type in paratypes select FetchGenericType(type);
+
+                Type @class = FetchType("", cls);
+
+                //TODO
+
+                return null;
+            }
+            else
+                return FetchType("", typestring);
         }
 
         /// <summary>
@@ -1105,8 +1172,8 @@ Valid usage examples are:
 
                         return char.Parse(m.Groups["value"].ToString());
                     })
-                    .Case<float, double, decimal>((_, T) => decimal.Parse(argv))
-                    .Case<sbyte, byte, short, ushort, int, uint, long, ulong>((_, T) => argv.Contains('-') ? (object)long.Parse(argv) : (object)ulong.Parse(argv))
+                    .Case<float, double, decimal>((_, T) => ConvertType(decimal.Parse(argv), T))
+                    .Case<sbyte, byte, short, ushort, int, uint, long, ulong>((_, T) => ConvertType(argv.Contains('-') ? (object)long.Parse(argv) : (object)ulong.Parse(argv), T))
                     .Case<bool>((_, T) => isnum ? long.Parse(argv) != 0L : isflt ? decimal.Parse(argv) != 0m : bool.Parse(argv))
                     .Case(T => T.IsArray, (_, T) => {
                         Type t = T.GetElementType();
@@ -1191,7 +1258,7 @@ Valid usage examples are:
                     .Case<FileInfo>(_ => new FileInfo(argv))
                     .Case<Uri>(_ => new Uri(argv))
                     .Case<num.Complex, wpf.Size, wpf.Point, Vector2D, cor.Complex>((_, t) => {
-                        if ((m = Regex.Match(argv, @"$\s*\(\s*(?<real>[^\s]+)\s*\,\s*(?<imag>[^\s]+)\s*\)\s*")).Success)
+                        if ((m = Regex.Match(argv, @"^\s*\(\s*(?<real>[^\s]+)\s*\,\s*(?<imag>[^\s]+)\s*\)\s*$")).Success)
                         {
                             object d1, d2;
 
@@ -1207,7 +1274,7 @@ Valid usage examples are:
                         return null;
                     })
                     .Case<Vector3D>((_, t) => {
-                        if ((m = Regex.Match(argv, @"$\s*\(\s*(?<x>[^\s]+)\s*\,\s*(?<y>[^\s]+)\s*,\s*(?<z>[^\s]+)\s*\)\s*")).Success)
+                        if ((m = Regex.Match(argv, @"^\s*\(\s*(?<x>[^\s]+)\s*\,\s*(?<y>[^\s]+)\s*,\s*(?<z>[^\s]+)\s*\)\s*$")).Success)
                         {
                             object d1, d2, d3;
 
@@ -1220,7 +1287,7 @@ Valid usage examples are:
                         return null;
                     })
                     .Case<win.Size, win.Point>((_, t) => {
-                        if ((m = Regex.Match(argv, @"$\s*\(\s*(?<x>[^\s]+)\s*\,\s*(?<y>[^\s]+)\s*\)\s*")).Success)
+                        if ((m = Regex.Match(argv, @"^\s*\(\s*(?<x>[^\s]+)\s*\,\s*(?<y>[^\s]+)\s*\)\s*$")).Success)
                         {
                             object i1, i2;
 
@@ -1233,7 +1300,7 @@ Valid usage examples are:
                         return null;
                     })
                     .Case<SizeF, PointF>((_, t) => {
-                        if ((m = Regex.Match(argv, @"$\s*\(\s*(?<x>[^\s]+)\s*\,\s*(?<y>[^\s]+)\s*\)\s*")).Success)
+                        if ((m = Regex.Match(argv, @"^\s*\(\s*(?<x>[^\s]+)\s*\,\s*(?<y>[^\s]+)\s*\)\s*$")).Success)
                         {
                             object i1, i2;
 

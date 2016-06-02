@@ -54,6 +54,7 @@ rundll.net mscorlib IntPtr::Size
 :: test implicit operators
 rundll.net uclib ConstantMathFunction:://opimplicit(decimal) 4
 :: test operators
+rundll.net uclib h.Vector3D.//op+(h.Vector3D,h.Vector3D) (3,1,5) (4,2,0)
 rundll.net uclib MathFunction.//op*(MathFunction,MathFunction) "2x^3-7" "2-x^2"
 rundll.net uclib MathFunction.//op/(MathFunction,MathFunction) "x^2-2x+1" "x+1"
 :: test complex parsing
