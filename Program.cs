@@ -44,7 +44,7 @@ namespace RunDLL
     /// </summary>
     public unsafe static class Program
     {
-        internal const string STR_REGEX_G_TYPEBASE = @"(?<class>([\w]+\.?)+)(\<(?<params>(.+\s*(\,\s*)?)+)\>)?";
+        internal const string STR_REGEX_G_TYPEBASE = @"^\s*(?<class>([\w]+\.?)+)(\s*\<(?<params>(.+\s*(\,\s*)?)+)\>)\s*$";
         internal const string STR_REGEX_FLOAT = @"\s*(?<sign>\+|\-)?\s*(?<value>[0-9]*(\.|\,)?[0-9]+([e][\-\+]?[0-9]+)?)(d|f|m)?\s*";
         internal const string STR_REGEX_OPBASE = @"(true|false|implicit|explicit|\+\+|--|\|\||&&|<<=?|>>=?|->|~|[+-=!^<>*&|%]=?)";
         internal const string STR_REGEX_PARAMBASE = @"\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*";
@@ -80,6 +80,7 @@ namespace RunDLL
         internal static readonly FileInfo nfo = new FileInfo(Assembly.GetExecutingAssembly().Location);
         internal static readonly string modname = nfo.Name.ToLower().Replace(nfo.Extension.ToLower(), "").Trim('.', ' ', '\t', '\r', '\n');
         internal static readonly string helpstr = "Use '" + modname + " --help' for further reference.";
+        internal static IEnumerable<Assembly> allasms;
         internal static IEnumerable<Type> alltypes;
         internal static AssemblyName asmname;
         internal static Assembly targasm;
@@ -100,8 +101,6 @@ namespace RunDLL
         /// <returns>Application exit code</returns>
         public static int Main(string[] args)
         {
-            var t = FetchGenericType("apex<kek, foo<bar, buzz>, lolz>");
-
             try
             {
                 typeof(Program).GetMethod("LoadAsssembly").WarmUp();
@@ -178,7 +177,7 @@ namespace RunDLL
 
             LoadAssemblies(args);
 
-            Type @class = FetchType(sig.Namespace, sig.Class);
+            Type @class = FetchGenericType(sig.FullClass);
 
             if (@class == null)
                 return 0;
@@ -811,17 +810,23 @@ Valid usage examples are:
 
             IEnumerable<AssemblyName> asmnames = (from _ in asms select _.GetReferencedAssemblies().Union(new AssemblyName[] { _.GetName() }))
                                                  .SelectMany(_ => _).Distinct();
+            IList<Assembly> asmlist = new List<Assembly>();
 
             alltypes = asmnames.SelectMany(_ => {
                 try
                 {
-                    return Assembly.Load(_).GetTypes();
+                    Assembly asm = Assembly.Load(_);
+
+                    asmlist.Add(asm);
+
+                    return asm.GetTypes();
                 }
                 catch
                 {
                     return new Type[0] { };
                 }
             }).Distinct();
+            allasms = asmlist.Distinct();
         }
 
         /// <summary>
@@ -870,6 +875,7 @@ Valid usage examples are:
         /// </summary>
         /// <param name="namespace">Namespace name</param>
         /// <param name="class">Type name</param>
+        /// <param name="forcegeneric">An optional paramater, which indicates, whether generic type search shall be forced</param>
         /// <returns>Type</returns>
         public static Type FetchType(string @namespace, string @class)
         {
@@ -892,9 +898,13 @@ Valid usage examples are:
 
             string __fclassnamenrm = @namespace + (@namespace.Length > 0 ? "." : "") + @class;
             string __fclassnamelwr = __fclassnamenrm.ToLower();
-            IEnumerable<Type> classes = from Type t in alltypes
-                                        where t.FullName.ToLower().EndsWith(__fclassnamelwr)
-                                        select t;
+            IEnumerable<Type> classes = (from a in allasms
+                                         let t = a.GetType(__fclassnamenrm, false, true)
+                                         where t != null
+                                         select t).Union(
+                                         from Type t in alltypes
+                                         where t.FullName.ToLower().EndsWith(__fclassnamelwr)
+                                         select t);
 
             if (classes.Count() == 0)
                 _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm.Replace(".", "::"), asmname.Name, asmname.Version);
@@ -970,7 +980,7 @@ Valid usage examples are:
         {
             Match m;
 
-            typestring = typestring.Replace(".", "::").Trim();
+            typestring = typestring.Replace("::", ".").Trim();
 
             if ((m = Regex.Match(typestring, STR_REGEX_G_TYPEBASE)).Success)
             {
@@ -1003,13 +1013,17 @@ Valid usage examples are:
 
                 paratypes.Add(par.Substring(s, e));
 
-                IEnumerable<Type> @params = from type in paratypes select FetchGenericType(type);
+                List<Type> @params = (from type in paratypes
+                                      let ttype = type.Trim()
+                                      where ttype.Length > 0
+                                      select FetchGenericType(type)).ToList();
 
-                Type @class = FetchType("", cls);
+                string pstring = @params.Count > 0 ? cls + '<' + new string(',', @params.Count - 1) + '>' : cls;
+                string rstring = @params.Count > 0 ? string.Format("{0}`{1}[{2}]", cls, @params.Count,
+                                                     string.Join(", ", from type in @params select "[" + type.FullName + ", " + type.Assembly.GetName().Name + "]")) : cls;
 
-                //TODO
-
-                return null;
+                return FetchType("", rstring) ??
+                       FetchType("", pstring).MakeGenericType(@params.ToArray());
             }
             else
                 return FetchType("", typestring);
@@ -1396,9 +1410,7 @@ Valid usage examples are:
                 // TODO : ANALYZE POINTER DEPTH AND CREATE POINTER TYPE
             }
 
-            // var @ref = new CodeTypeReference("System.Collections.Generic.IEnumerable<System.Reflection.MethodInfo>[][][]");
-
-            Type t = FetchType("", _p);
+            Type t = FetchGenericType(_p);
 
             if (t == null)
                 return null;

@@ -1,1 +1,1 @@
-﻿+ Add full argument generic/nested analyzation and support
+﻿* Improve argument generic/nested parsing speed
