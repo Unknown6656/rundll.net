@@ -101,25 +101,30 @@ namespace RunDLL
         /// <returns>Application exit code</returns>
         public static int Main(string[] args)
         {
+            int retcode = 1;
+
             try
             {
                 typeof(Program).GetMethod("LoadAsssembly").WarmUp();
 
-                foreach (MethodInfo nfo in typeof(IEnumerable<>).GetMethods().Union(typeof(Assembly).GetMethods()))
+                foreach (MethodInfo nfo in typeof(IEnumerable<>).GetMethods()
+                                    .Union(typeof(Assembly).GetMethods()))
                     if (!nfo.IsAbstract)
                         nfo.WarmUp();
 
-                int retcode = InnerMain(args);
-
-                if (Debugger.IsAttached)
-                    Win32.system("pause");
-
-                return retcode;
+                retcode = InnerMain(args);
             }
             catch (Exception ex)
             {
-                return _err(PrintException(ex, 0));
+                _err(PrintException(ex, 0));
             }
+            finally
+            {
+                if (Debugger.IsAttached)
+                    Win32.system("pause");
+            }
+
+            return retcode;
         }
 
         /// <summary>
@@ -857,6 +862,8 @@ Valid usage examples are:
                 return Pointer.Box(Pointer.Unbox(@in), type);
             // else if (type.IsNested)
             //     ;
+            else if (@in is Type & type == typeof(Type))
+                return @in as Type;
             else
                 try
                 {
@@ -1014,17 +1021,16 @@ Valid usage examples are:
 
                 paratypes.Add(par.Substring(s, e));
 
-                List<Type> @params = (from type in paratypes
-                                      let ttype = type.Trim()
-                                      where ttype.Length > 0
-                                      select FetchGenericType(type)).ToList();
+                Type[] @params = (from type in paratypes
+                                  where !string.IsNullOrWhiteSpace(type)
+                                  select FetchGenericType(type)).ToArray();
 
-                string pstring = @params.Count > 0 ? cls + '<' + new string(',', @params.Count - 1) + '>' : cls;
-                string rstring = @params.Count > 0 ? string.Format("{0}`{1}[{2}]", cls, @params.Count,
-                                                     string.Join(", ", from type in @params select "[" + type.FullName + ", " + type.Assembly.GetName().Name + "]")) : cls;
+                string pstring = @params.Length > 0 ? cls + '<' + new string(',', @params.Length - 1) + '>' : cls;
+                string rstring = @params.Length > 0 ? string.Format("{0}`{1}[{2}]", cls, @params.Length,
+                                                      string.Join(", ", from type in @params select "[" + type.FullName + ", " + type.Assembly.GetName().Name + "]")) : cls;
 
                 return FetchType("", rstring) ??
-                       FetchType("", pstring).MakeGenericType(@params.ToArray());
+                       FetchType("", pstring).MakeGenericType(@params);
             }
             else
                 return FetchType("", typestring);

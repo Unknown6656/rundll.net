@@ -1,0 +1,4 @@
+#gitignore file
+*/obj/
+obj/
+raw_*
