@@ -76,6 +76,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <Content Include=".gitignore" />
     <Content Include="PrintedHeader.txt" />
     <Content Include="TODO.txt" />
   </ItemGroup>

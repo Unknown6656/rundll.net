@@ -4,11 +4,9 @@
 
 The `rundll.net`-project is the .NET equivalent of Window's [`rundll.exe`/`rundll32.exe`](https://support.microsoft.com/en-us/kb/164787)-applications, which allows the caller to run functions inside a given dynamic library. The `rundll.net`-application, however, also the executions of private and static methods of the given [library/module/assembly](https://msdn.microsoft.com/en-us/library/ms973231.aspx).
 
-The following image visualizes the basic execution timeline concept of the `rundll.net`-application:<br/>
-<img src="timeline.png" alt="Timeline" style="width: 300px; margin-left: 100px;"/>
+The following image visualizes the basic functionality and execution timeline concept of the `rundll.net`-application:<br/>
+![Functionality and Timeline](timeline.png)
 <br/>
-
-_&lt;TODO: add more text&gt;_
 
 ##Usage
 
@@ -39,7 +37,7 @@ The following global options are defined:
   _Note: The .NET core framework library [`mscorlib.dll`](http://referencesource.microsoft.com/#mscorlib,namespaces) is always included._
 * `-w`, `--wpflib`<br/>Includes the .NET WPF (Windows Presentation foundation) framework libraries ([`System.Xaml.dll`](http://referencesource.microsoft.com/#System.Xaml,namespaces), [`PresentationCore.dll`](http://referencesource.microsoft.com/#PresentationCore,namespaces), [`PresentationFramework.dll`](http://referencesource.microsoft.com/#PresentationFramework,namespaces), [`WindowsFormsIntegration.dll`](http://referencesource.microsoft.com/#WindowsFormsIntegration,namespaces) and [`WindowsBase.dll`](http://referencesource.microsoft.com/#WindowsBase,namespaces)).<br/>
 * `-f`, `--wformlib`<br/>Includes the .NET Windows Forms framework libraries ([`System.Drawing.dll`](http://referencesource.microsoft.com/#System.Drawing,namespaces), [`System.Drawing.Design.dll`](http://referencesource.microsoft.com/#System.Drawing.Design,namespaces), [`System.Windows.Forms.dll`](http://referencesource.microsoft.com/#System.Windows.Forms,namespaces), `System.Windows.Forms.DataVisualization.dll` and `System.Windows.Forms.DataVisualization.Design.dll`).
-* `-c`, `--wcflib`<br/>Includes the .NET WCF (Windows Communication Foundation) framework libraries (`System.ServiceModel.<*>.dll`).
+* `-c`, `--wcflib`<br/>Includes the .NET WCF (Windows Communication Foundation) framework libraries (`System.ServiceModel.*.dll`).
 * `-fs`, `--fsharp`<br/>Includes the .NET F# framework libraries.
 * `-u`, `--uclib`<br/>Includes the .NET Unknown6656 core library `uclib`
 * `-e:...`, `--extlib:...`<br/>Includes the given .NET library and loads its types. The assembly's file path must be given directly after the colon (`:`). This option can be given multiple times.
@@ -96,4 +94,4 @@ The batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/maste
 
 ##Changelog
 
- - **2016-06-03** Version _1.0_: First beta release of the `rundll.net`-project
+ - **2016-06-03** Version _1.0.0_: First beta release of the `rundll.net`-project
