@@ -1803,4 +1803,30 @@ Valid usage examples are:
             }
         }
     }
+
+    /// <summary>
+    /// Contains information about the current assembly build version
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Assembly)]
+    public class BuildInformationAttribute
+        : Attribute
+    {
+
+        /// <summary>
+        /// The assembly build date
+        /// </summary>
+        public string Date { set; get; }
+        /// <summary>
+        /// The machine, on which the assembly has been build
+        /// </summary>
+        public string Machine { set; get; }
+        /// <summary>
+        /// The user, which initiated the build
+        /// </summary>
+        public string User { set; get; }
+        /// <summary>
+        /// The hash of the main code file
+        /// </summary>
+        public string Hash { set; get; }
+    }
 }

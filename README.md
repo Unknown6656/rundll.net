@@ -94,4 +94,8 @@ The batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/maste
 
 ##Changelog
 
- - **2016-06-03** Version _1.0.0_: First beta release of the `rundll.net`-project
+ - **2016-06-04** Version _1.0.1_:
+<br/>&#43; Added a unique hash value to the assembly attributes for version/build tracking
+<br/>&#42; Improved the versioner application
+ - **2016-06-03** Version _1.0.0_:
+<br/>First beta release of the `rundll.net`-project

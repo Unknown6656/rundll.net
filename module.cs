@@ -1,5 +1,12 @@
 
 using System.Reflection;
+using RunDLL;
 
-[assembly: AssemblyVersion("1.0.0.319")]
-[assembly: AssemblyFileVersion("1.0.0.319")]
+[assembly: AssemblyVersion("1.0.1.329")]
+[assembly: AssemblyFileVersion("1.0.1.329")]
+[assembly: BuildInformation(
+    Date = "2016-06-04, 15:31:46:242938",
+    Machine = "E56B09220E2B64EBC2B0631D5BE5840FA51C7CB89E811E69903345EEE3FB3D8C",
+    Hash = "C4897415A65954EC9903C7E43CC5F084E478073D076BFF799BE58C8C9F1C57AA",
+    User = "09F85755517734972287D65F5CB172220B274FB54A5DAB8AB1AFF06BA8FB49D8"
+)]
