@@ -78,5 +78,6 @@ rundll.net rundll.test.fs FSTestModule.Fibonacci(int) 20
 
 :: test generic support
 uclib CommonLanguageRuntime.GetCPPTypeString(System.Type) "System.Collections.Generic.List<string>"
+uclib "LINQExtensions.Shuffle<int>(int[])" {3,1,5,4,2}
 
 :end

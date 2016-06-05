@@ -1,26 +1,20 @@
-﻿using System.Windows.Forms.Integration;
-using System.Web.Script.Serialization;
+﻿using System.Web.Script.Serialization;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using System.ComponentModel;
-using System.Windows.Forms;
 using System.Globalization;
 using System.Diagnostics;
 using System.Collections;
 using CoreLib.Management;
 using System.Reflection;
-using Microsoft.CSharp;
 using System.Numerics;
 using System.Windows;
-using System.CodeDom;
 using System.Drawing;
 using System.Data;
 using System.Linq;
 using System.Text;
 using System.Xaml;
-using System.Xml;
 using System.IO;
 using System;
 
@@ -44,12 +38,13 @@ namespace RunDLL
     /// </summary>
     public unsafe static class Program
     {
-        internal const string STR_REGEX_G_TYPEBASE = @"^\s*(?<class>([\w]+\.?)+)(\s*\<(?<params>(.+\s*(\,\s*)?)+)\>)\s*$";
+        internal const string STR_REGEX_G_TYPEBASE_R = @"\s*(?<class>([\w]+\.?)+)(\s*\<(?<params>(.+\s*(\,\s*)?)+)\>)\s*";
+        internal const string STR_REGEX_G_TYPEBASE = @"^" + STR_REGEX_G_TYPEBASE_R + "$";
         internal const string STR_REGEX_FLOAT = @"\s*(?<sign>\+|\-)?\s*(?<value>[0-9]*(\.|\,)?[0-9]+([e][\-\+]?[0-9]+)?)(d|f|m)?\s*";
         internal const string STR_REGEX_OPBASE = @"(true|false|implicit|explicit|\+\+|--|\|\||&&|<<=?|>>=?|->|~|[+-=!^<>*&|%]=?)";
-        internal const string STR_REGEX_PARAMBASE = @"\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[(\,)*\])+|\*+))?)+\s*";
+        internal const string STR_REGEX_PARAMBASE = @"\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[\,*\])+|\*+))?)+\s*";
         internal static readonly Regex REGEX_TYPE = new Regex(@"(?<namespace>(\w+\.)*)(?<class>\w+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?((?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?|(?<name>\/\/this)(?<parameters>\[" + STR_REGEX_PARAMBASE + @"\])?|(?<name>\/\/op" + STR_REGEX_OPBASE + @")(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?((?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<genparameters>\<(\s*.+)(\s*\,\s*.+)*\s*\>)?(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?|(?<name>\/\/this)(?<parameters>\[" + STR_REGEX_PARAMBASE + @"\])?|(?<name>\/\/op" + STR_REGEX_OPBASE + @")(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         internal static readonly Dictionary<string, Tuple<string, string>> PRIMITIVES = new Dictionary<string, Tuple<string, string>>() {
             { "bool", new Tuple<string, string>("System", "Boolean") },
             { "byte", new Tuple<string, string>("System", "Byte") },
@@ -173,6 +168,8 @@ namespace RunDLL
                 sig.Arguments = (from string s in (reg.Groups["parameters"].ToString() ?? "").TrimStart('(').TrimEnd(')').Split(',')
                                  select s.Trim()).ToArray();
                 sig.IsProperty = !reg.Groups["parameters"].Success && !(method.Contains('(') && method.Contains(')'));
+                sig.GenericArguments = (from string s in (reg.Groups["genparameters"].ToString() ?? "").TrimStart('<').TrimEnd('>').Split(',')
+                                        select s.Trim()).ToArray();
             }
             else
                 return _err("Invalid method name format `{1}`.{0}", helpstr, method);
@@ -190,7 +187,7 @@ namespace RunDLL
             _ok("Type `{0}` loaded from `{1}`.", @class.FullName.Replace(".", "::"), asmname.Name);
 
             bool constructor;
-            object result = FetchMethod(@class, sig.Member, sig.IsProperty, ref @static, out constructor, sig.Arguments);
+            object result = FetchMethod(@class, sig.Member, sig.IsProperty, ref @static, out constructor, sig.Arguments, sig.GenericArguments);
             ConstructorInfo cmember = null;
             MethodInfo member = null;
 
@@ -542,7 +539,7 @@ Valid usage examples are:
             }
 
             Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine(Properties.Resources.PrintedHeader, nfo.Name);
+            Console.WriteLine(Properties.Resources.PrintedHeader, nfo.Name, Assembly.GetExecutingAssembly().GetName().Version);
             Console.WriteLine("Arguments: {0}", string.Join(" ", args));
 
             return false;
@@ -770,10 +767,10 @@ Valid usage examples are:
             if (CheckForOption(args, "wpflib", "w"))
             {
                 asms.Add(typeof(XamlDirective).Assembly);
-                asms.Add(typeof(WindowsFormsHost).Assembly);
-                asms.Add(typeof(DependencyObject).Assembly);
                 asms.Add(typeof(System.Windows.DataObject).Assembly);
                 asms.Add(typeof(ConditionCollection).Assembly);
+
+                asms.AddRange(from string s in new string[] { "WindowsBase", "WindowsFormsIntegration" } select LoadAsssembly(s));
             }
 
             if (CheckForOption(args, "wformlib", "f"))
@@ -1397,7 +1394,7 @@ Valid usage examples are:
 
                 Tuple<Type, ParameterAttributes> tpl = FetchParameter(_p);
 
-                if (tpl != null)
+                if (tpl == null)
                     return null;
                 else
                     return new Tuple<Type, ParameterAttributes>(ParseArray(tpl.Item1, brackets), tpl.Item2);
@@ -1443,25 +1440,25 @@ Valid usage examples are:
         /// <param name="isprop">Is it a property?</param>
         /// <param name="parameters">Method parameter type list</param>
         /// <returns>MethodInfo-instance</returns>
-        public static MethodInfo FetchMethod(Type tp, string name, bool isprop, params string[] parameters)
+        public static MethodInfo FetchMethod(Type tp, string name, bool isprop, string[] parameters, string[] genparameters)
         {
             bool indexer = name == "/this/";
             MethodInfo[] members = tp.GetMethods((BindingFlags)0x01063f7f);
             PropertyInfo[] props = tp.GetProperties();
-            IEnumerable<MethodInfo> match = isprop ? from p in props
-                                                     let pget = p.GetGetMethod() 
-                                                     where indexer ? p.GetIndexParameters().Length > 0
-                                                                   : p.Name == name ||
-                                                                     pget.Name == name
-                                                     select pget
-                                                   : from m in members
-                                                     where m.Name == name
-                                                     select m;
+            MethodInfo[] match = (isprop ? from p in props
+                                           let pget = p.GetGetMethod() 
+                                           where indexer ? p.GetIndexParameters().Length > 0
+                                                         : p.Name == name ||
+                                                           pget.Name == name
+                                           select pget
+                                         : from m in members
+                                           where m.Name == name
+                                           select m).ToArray();
             List<Tuple<Type, ParameterAttributes>> paramtypes = new List<Tuple<Type, ParameterAttributes>>();
 
-            if (match.Count() > 0)
-                if (match.Count() == 1)
-                    return match.First();
+            if (match.Length > 0)
+                if (match.Length == 1)
+                    return match[0];
                 else
                 {
                     Tuple<Type, ParameterAttributes> res;
@@ -1472,37 +1469,62 @@ Valid usage examples are:
                         else
                             paramtypes.Add(res);
 
-                    match = from m in match
-                            let margs = from p in indexer ? (from i in props
-                                                             where i.GetIndexParameters().Length > 0
-                                                             where m == i.GetGetMethod()
-                                                             select i).First().GetIndexParameters()
-                                                          : m.GetParameters()
-                                        select new Tuple<Type, ParameterAttributes>(p.ParameterType, p.Attributes & (ParameterAttributes.In | ParameterAttributes.Out))
-                            where new Func<bool>(() => {
-                                var ma = margs.ToArray();
-                                var pa = paramtypes.ToArray();
+                    Type[] ga = (from p in genparameters select FetchGenericType(p)).ToArray();
+                    Tuple<Type, ParameterAttributes>[] pa = paramtypes.ToArray();
 
-                                if (ma.Length != pa.Length)
-                                    return false;
+                    match = (from m in match
+                             where m.ContainsGenericParameters ? m.GetGenericArguments().Length == genparameters.Length : true
+                             let margs = from p in indexer ? (from i in props
+                                                              where i.GetIndexParameters().Length > 0
+                                                              where m == i.GetGetMethod()
+                                                              select i).First().GetIndexParameters()
+                                                           : m.GetParameters()
+                                         select new Tuple<Type, ParameterAttributes>(p.ParameterType, p.Attributes & (ParameterAttributes.In | ParameterAttributes.Out))
+                             let result = new Func<Tuple<bool, MethodInfo>>(() => {
+                                 Tuple<Type, ParameterAttributes>[] ma = margs.ToArray();
+                                 
+                                 if (ma.Length != pa.Length)
+                                    return new Tuple<bool, MethodInfo>(false, null);
+                                 else if (m.ContainsGenericParameters)
+                                     try
+                                     {
+                                         MethodInfo nfo = m.MakeGenericMethod(ga);
+                                         
+                                         ma = (from p in nfo.GetParameters()
+                                               select new Tuple<Type, ParameterAttributes>(p.ParameterType, p.Attributes & (ParameterAttributes.In | ParameterAttributes.Out))).ToArray();
 
-                                for (int i = 0; i < ma.Length; i++)
-                                    if (ma[i].Item2 != pa[i].Item2)
-                                        return false;
-                                    else if (ma[i].Item1.FullName != pa[i].Item1.FullName)
-                                        return false;
+                                         for (int i = 0; i < ma.Length; i++)
+                                             if (ma[i].Item2 != pa[i].Item2)
+                                                 return new Tuple<bool, MethodInfo>(false, null);
+                                             else if (ma[i].Item1.FullName != pa[i].Item1.FullName)
+                                                 return new Tuple<bool, MethodInfo>(false, null);
 
-                                return true;
-                            })()
-                            select m;
+                                         return new Tuple<bool, MethodInfo>(true, nfo);
+                                     }
+                                     catch
+                                     {
+                                         return new Tuple<bool, MethodInfo>(false, null);
+                                     }
 
-                    if (match.Count() == 0)
+                                 for (int i = 0; i < ma.Length; i++)
+                                     if (ma[i].Item2 != pa[i].Item2)
+                                         return new Tuple<bool, MethodInfo>(false, null);
+                                     else if (ma[i].Item1.FullName != pa[i].Item1.FullName)
+                                         return new Tuple<bool, MethodInfo>(false, null);
+
+                                 return new Tuple<bool, MethodInfo>(true, m);
+                             })()
+                             where result.Item1
+                             where result.Item2 != null
+                             select result.Item2).ToArray();
+
+                    if (match.Length == 0)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
                         Console.WriteLine("The member `{0}` could not be found inside the type `[{1}]{2}`.", indexer ? "__index" : name, asmname.Name, tp.FullName.Replace(".", "::"));
                         Console.ForegroundColor = ConsoleColor.White;
                     }
-                    else if (match.Count() > 1)
+                    else if (match.Length > 1)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
                         Console.WriteLine("The member `{0}` does match mulitple members inside `[{1}]{2}`:", indexer ? "__index" : name, asmname.Name, tp.FullName.Replace(".", "::"));
@@ -1514,7 +1536,7 @@ Valid usage examples are:
                         Console.ForegroundColor = ConsoleColor.White;
                     }
                     else
-                        return match.First();
+                        return match[0];
                 }
             else
             {
@@ -1536,7 +1558,7 @@ Valid usage examples are:
         /// <param name="constructor">Returns, whether the method is a constructor</param>
         /// <param name="parameters">Method parameter type list</param>
         /// <returns>MethodBase/MethodInfo/ConstructorInfo-instance</returns>
-        public static dynamic FetchMethod(Type tp, string name, bool isprop, ref bool @static, out bool constructor, params string[] parameters)
+        public static dynamic FetchMethod(Type tp, string name, bool isprop, ref bool @static, out bool constructor, string[] parameters, string[] genparameters)
         {
 #pragma warning disable 183, 184
             constructor = false;
@@ -1582,7 +1604,7 @@ Valid usage examples are:
                     if (@static)
                         @static = _war("The keyword `new` is missing.") is string; // constant false
 
-                    return FetchMethod(tp, "/this/", true, parameters);
+                    return FetchMethod(tp, "/this/", true, parameters, genparameters);
                 }
                 else if (name.StartsWith("op"))
                 {
@@ -1596,7 +1618,7 @@ Valid usage examples are:
                     else
                         name = OPERATORS[name];
 
-                    return FetchMethod(tp, name, false, parameters);
+                    return FetchMethod(tp, name, false, parameters, genparameters);
                 }
                 else
                     return _err("The given member name `...//{0}` is not valid.{1}", name, helpstr).NULL();
@@ -1637,7 +1659,6 @@ Valid usage examples are:
                                                        return true;
                                                    })()
                                                    select m).ToArray();
-
                         if (match.Length != 1)
                         {
                             Console.ForegroundColor = ConsoleColor.Red;
@@ -1658,7 +1679,7 @@ Valid usage examples are:
                 return null;
             }
             else
-                return FetchMethod(tp, name, isprop, parameters);
+                return FetchMethod(tp, name, isprop, parameters, genparameters);
 #pragma warning restore
         }
 
@@ -1786,6 +1807,7 @@ Valid usage examples are:
         public bool IsProperty { get; set; }
         public string Namespace { get; set; }
         public string[] Arguments { get; set; }
+        public string[] GenericArguments { get; set; }
 
         public string FullClass
         {
@@ -1825,8 +1847,12 @@ Valid usage examples are:
         /// </summary>
         public string User { set; get; }
         /// <summary>
-        /// The hash of the main code file
+        /// The hash of the main C# code file
         /// </summary>
-        public string Hash { set; get; }
+        public string CSHash { set; get; }
+        /// <summary>
+        /// The hash of the main IL code file
+        /// </summary>
+        public string ILHash { set; get; }
     }
 }

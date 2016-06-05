@@ -94,6 +94,10 @@ The batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/maste
 
 ##Changelog
 
+ - **2016-06-05** Version _1.1.0_:
+<br/>&#43; Added generic method support
+ - **2016-06-04** Version _1.0.2_:
+<br/>&#43; Added internal CIL code support
  - **2016-06-04** Version _1.0.1_:
 <br/>&#43; Added a unique hash value to the assembly attributes for version/build tracking
 <br/>&#42; Improved the versioner application

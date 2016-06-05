@@ -1,1 +1,2 @@
 ﻿* Improve argument generic/nested parsing speed
++ Implement IEnumerable/IList/Array parsing
