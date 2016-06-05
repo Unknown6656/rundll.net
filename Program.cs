@@ -165,10 +165,10 @@ namespace RunDLL
                 sig.Namespace = (reg.Groups["namespace"].ToString() ?? "").Trim('.', ' ', '\r', '\t', '\n');
                 sig.Class = (reg.Groups["class"].ToString() ?? "").Trim('.', ' ', '\r', '\t', '\n');
                 sig.Member = (reg.Groups["name"].ToString() ?? "").Trim('.', ' ', '\r', '\t', '\n');
-                sig.Arguments = (from string s in (reg.Groups["parameters"].ToString() ?? "").TrimStart('(').TrimEnd(')').Split(',')
+                sig.Arguments = (from string s in (reg.Groups["parameters"].ToString() ?? "").Trim().SplitByComma(true)
                                  select s.Trim()).ToArray();
                 sig.IsProperty = !reg.Groups["parameters"].Success && !(method.Contains('(') && method.Contains(')'));
-                sig.GenericArguments = (from string s in (reg.Groups["genparameters"].ToString() ?? "").TrimStart('<').TrimEnd('>').Split(',')
+                sig.GenericArguments = (from string s in (reg.Groups["genparameters"].ToString() ?? "").Trim().SplitByComma(true)
                                         select s.Trim()).ToArray();
             }
             else
@@ -578,6 +578,85 @@ Valid usage examples are:
         }
 
         /// <summary>
+        /// Splits the given string by commas `,` and respects blocks
+        /// </summary>
+        /// <param name="input">Input string</param>
+        /// <returns>Split string</returns>
+        public static string[] SplitByComma(this string input, bool trimends = false)
+        {
+            Stack<char> blocks = new Stack<char>();
+            List<string> split = new List<string>();
+
+            if ((input.Length > 1) && trimends)
+                input = input.Substring(1, input.Length - 2);
+
+            int s = 0, e = 0;
+            char lc = '\0';
+
+            try
+            {
+                for (int i = 0, l = input.Length; i < l; i++)
+                    switch (lc = input[i])
+                    {
+                        case ',':
+                            if (blocks.Count > 0)
+                                goto default;
+
+                            split.Add(input.Substring(s, e));
+
+                            s = i + 1;
+                            e = 0;
+
+                            break;
+                        case '<':
+                        case '(':
+                        case '[':
+                        case '{':
+                        case '«':
+                            blocks.Push(input[i]);
+
+                            goto default;
+                        case '>':
+                            if (blocks.Peek() == '<')
+                                blocks.Pop();
+
+                            goto default;
+                        case ')':
+                            if (blocks.Peek() == '(')
+                                blocks.Pop();
+
+                            goto default;
+                        case ']':
+                            if (blocks.Peek() == '[')
+                                blocks.Pop();
+
+                            goto default;
+                        case '}':
+                            if (blocks.Peek() == '{')
+                                blocks.Pop();
+
+                            goto default;
+                        case '»':
+                            if (blocks.Peek() == '«')
+                                blocks.Pop();
+
+                            goto default;
+                        default: ++e;
+                            break;
+                    }
+            }
+            catch (InvalidOperationException)
+            {
+                _err("Illegal character `{0}`: please verify the given string.", lc);
+            }
+
+            if (input.Length > 0)
+                split.Add(input.Remove(0, Math.Min(s, input.Length - 1)));
+
+            return split.ToArray();
+        }
+
+        /// <summary>
         /// Loads the file based on the given name
         /// </summary>
         /// <param name="name">File name</param>
@@ -903,39 +982,39 @@ Valid usage examples are:
 
             string __fclassnamenrm = @namespace + (@namespace.Length > 0 ? "." : "") + @class;
             string __fclassnamelwr = __fclassnamenrm.ToLower();
-            IEnumerable<Type> classes = (from a in allasms
-                                         let t = a.GetType(__fclassnamenrm, false, true)
-                                         where t != null
-                                         select t).Union(
-                                         from Type t in alltypes
-                                         where t.FullName.ToLower().EndsWith(__fclassnamelwr)
-                                         select t);
+            Type[] classes = (from a in allasms
+                              let t = a.GetType(__fclassnamenrm, false, true)
+                              where t != null
+                              select t).Union(
+                              from Type t in alltypes
+                              where t.FullName.ToLower().EndsWith(__fclassnamelwr)
+                              select t).ToArray();
 
-            if (classes.Count() == 0)
+            if (classes.Length == 0)
                 _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm.Replace(".", "::"), asmname.Name, asmname.Version);
-            else if (classes.Count() > 1)
+            else if (classes.Length > 1)
             {
-                IEnumerable<Type> oclasses = classes;
+                Type[] oclasses = classes;
 
-                classes = from Type t in alltypes
-                          where t.Name == @class
-                          where t.Namespace == @namespace
-                          select t;
+                classes = (from Type t in alltypes
+                           where t.Name == @class
+                           where t.Namespace == @namespace
+                           select t).ToArray();
 
-                if (classes.Count() == 0)
+                if (classes.Length == 0)
                 {
-                    classes = from Type t in alltypes
-                              where t.Name == @class
-                              select t;
+                    classes = (from Type t in alltypes
+                               where t.Name == @class
+                               select t).ToArray();
 
-                    if (classes.Count() != 1)
+                    if (classes.Length != 1)
                     {
                         _err("The type `{0}` could not be found in the assembly `{1}[{2}]` or its dependencies.", __fclassnamenrm.Replace(".", "::"), asmname.Name, asmname.Version);
 
                         Console.ForegroundColor = ConsoleColor.Yellow;
                         Console.WriteLine("However, the following types have been found, which partly match the given type name:");
 
-                        int oclen = oclasses.Count();
+                        int oclen = oclasses.Length;
                         const int ocmaxlen = 24;
 
                         foreach (Type t in oclasses.Take(ocmaxlen))
@@ -955,9 +1034,9 @@ Valid usage examples are:
                         Console.ForegroundColor = ConsoleColor.White;
                     }
                     else
-                        return classes.First();
+                        return classes[0];
                 }
-                else if (classes.Count() > 1)
+                else if (classes.Length > 1)
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine("The type `{0}` could not be determined, as it is not unique:", @class.Replace(".", "::"));
@@ -968,10 +1047,10 @@ Valid usage examples are:
                     Console.ForegroundColor = ConsoleColor.White;
                 }
                 else
-                    return classes.First();
+                    return classes[0];
             }
             else
-                return classes.First();
+                return classes[0];
 
             return null;
         }
@@ -991,32 +1070,7 @@ Valid usage examples are:
             {
                 string cls = m.Groups["class"].ToString();
                 string par = m.Groups["params"].Success ? m.Groups["params"].ToString() : "";
-
-                List<string> paratypes = new List<string>();
-
-                int s = 0, e = 0, c = 0;
-
-                for (int i = 0, l = par.Length; i < l; i++)
-                    switch (par[i])
-                    {
-                        case ',':
-                            if (c > 0)
-                                goto default;
-
-                            paratypes.Add(par.Substring(s, e));
-
-                            s = i + 1;
-                            e = 0;
-                            break;
-                        case '<': ++c;
-                            goto default;
-                        case '>': --c;
-                            goto default;
-                        default: ++e;
-                            break;
-                    }
-
-                paratypes.Add(par.Substring(s, e));
+                string[] paratypes = par.SplitByComma();
 
                 Type[] @params = (from type in paratypes
                                   where !string.IsNullOrWhiteSpace(type)
@@ -1463,13 +1517,17 @@ Valid usage examples are:
                 {
                     Tuple<Type, ParameterAttributes> res;
 
-                    foreach (string p in parameters)
-                        if ((res = FetchParameter(p)) == null)
-                            return null;
-                        else
-                            paramtypes.Add(res);
+                    if (!(parameters.Length == 1) || !(parameters[0] == ""))
+                        foreach (string p in parameters)
+                            if ((res = FetchParameter(p)) == null)
+                                return null;
+                            else
+                                paramtypes.Add(res);
 
-                    Type[] ga = (from p in genparameters select FetchGenericType(p)).ToArray();
+                    Type[] ga = (from p in genparameters
+                                 let _p = FetchParameter(p)
+                                 where _p != null
+                                 select _p.Item1).ToArray();
                     Tuple<Type, ParameterAttributes>[] pa = paramtypes.ToArray();
 
                     match = (from m in match
@@ -1518,16 +1576,18 @@ Valid usage examples are:
                              where result.Item2 != null
                              select result.Item2).ToArray();
 
+                    string genstr = ga.Length == 0 ? "" : "<" + string.Join(", ", from Type t in ga select t.GetCPPTypeString()) + ">";
+
                     if (match.Length == 0)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The member `{0}` could not be found inside the type `[{1}]{2}`.", indexer ? "__index" : name, asmname.Name, tp.FullName.Replace(".", "::"));
+                        Console.WriteLine("The member `{0}{3}` could not be found inside the type `[{1}]{2}`.", indexer ? "__index" : name, asmname.Name, tp.FullName.Replace(".", "::"), genstr);
                         Console.ForegroundColor = ConsoleColor.White;
                     }
                     else if (match.Length > 1)
                     {
                         Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine("The member `{0}` does match mulitple members inside `[{1}]{2}`:", indexer ? "__index" : name, asmname.Name, tp.FullName.Replace(".", "::"));
+                        Console.WriteLine("The member `{0}{3}` does match mulitple members inside `[{1}]{2}`:", indexer ? "__index" : name, asmname.Name, tp.FullName.Replace(".", "::"), genstr);
                         Console.ForegroundColor = ConsoleColor.Yellow;
 
                         foreach (MethodInfo mnfo in match)

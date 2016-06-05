@@ -77,7 +77,9 @@ rundll.net rundll.test.fs FSTestModule.Fibonacci(int) 20
 :: rundll.net rundll.net.exe rundll.signature.FullString(rundll.signature) @JSON::testparam.json
 
 :: test generic support
-uclib CommonLanguageRuntime.GetCPPTypeString(System.Type) "System.Collections.Generic.List<string>"
-uclib "LINQExtensions.Shuffle<int>(int[])" {3,1,5,4,2}
-
+rundll.net uclib CommonLanguageRuntime.GetCPPTypeString(System.Type) "System.Collections.Generic.List<string>"
+rundll.net uclib "LINQExtensions.Shuffle<int>(int[])" {3,1,5,4,2}
+rundll.net uclib "LINQExtensions.GetTypes<int,string,char[]>()"
+::--------------------------------------- TODO : FIX THE FOLLOWING CRASH ---------------------------------------::
+rundll.net uclib "LINQExtensions.GetTypes<int,string,char[],Tuple<Tuple<int,long[][]>,string[,]>>()"
 :end

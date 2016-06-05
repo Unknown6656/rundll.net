@@ -1,2 +1,3 @@
-﻿* Improve argument generic/nested parsing speed
+﻿* Fix n-dimensional generic nesting
+* Improve argument generic/nested parsing speed
 + Implement IEnumerable/IList/Array parsing

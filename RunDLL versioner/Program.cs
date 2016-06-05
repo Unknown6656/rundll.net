@@ -39,6 +39,7 @@ using RunDLL;
     Date = """ + DateTime.Now.ToString("yyyy-MM-dd, HH:mm:ss:ffffff") + @""",
     Machine = """ + new HwID(HashSize.Ridicoulus).GetHardwareID(true) + @""",
     CSHash = """ + hash.ComputeHexHash(File.ReadAllText("./../../program.cs"), OMode.UpperCase, false) + @""",
+    ILHash = """ + hash.ComputeHexHash(File.ReadAllText("./../../program.il"), OMode.UpperCase, false) + @""",
     User = """ + hash.ComputeHexHash(Environment.UserName, OMode.UpperCase, false) + @"""
 )]");
 

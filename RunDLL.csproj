@@ -82,6 +82,7 @@
     <None Include="test.bat">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="Unknown6656.snk" />
   </ItemGroup>
   <ItemGroup>
     <Content Include=".gitignore" />
