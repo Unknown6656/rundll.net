@@ -72,6 +72,9 @@ rundll.net rundll.test.so TestModule.getpointer(int) 42
 rundll.net rundll.test.so TestModule.getstruct(int,int) 42 315
 :: test F#-support
 rundll.net rundll.test.fs FSTestModule.Fibonacci(int) 20
+:: test IL-support
+rundll.net rundll.net RunDLL.Native.Add(int,int) 42 315
+rundll.net rundll.net RunDLL.Native.Fibonacci(int) 10
 
 :: test json loading support
 :: rundll.net rundll.net.exe rundll.signature.FullString(rundll.signature) @JSON::testparam.json
@@ -80,6 +83,7 @@ rundll.net rundll.test.fs FSTestModule.Fibonacci(int) 20
 rundll.net uclib CommonLanguageRuntime.GetCPPTypeString(System.Type) "System.Collections.Generic.List<string>"
 rundll.net uclib "LINQExtensions.Shuffle<int>(int[])" {3,1,5,4,2}
 rundll.net uclib "LINQExtensions.GetTypes<int,string,char[]>()"
-::--------------------------------------- TODO : FIX THE FOLLOWING CRASH ---------------------------------------::
+::--------------------------------------- TODO : FIX THE FOLLOWING CRASHES ---------------------------------------::
 rundll.net uclib "LINQExtensions.GetTypes<int,string,char[],Tuple<Tuple<int,long[][]>,string[,]>>()"
+rundll.net uclib "LINQExtensions.GetTypes<int,string,char[],string[,]>()"
 :end
