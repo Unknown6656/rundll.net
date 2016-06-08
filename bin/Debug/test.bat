@@ -67,9 +67,12 @@ rundll.net uclib CoreLib.Win32.GetBinaryType(string,^&BinaryType) "rundll.net.ex
 :: test C++/CLR-support
 rundll.net rundll.test.so TestModule::length(string) "foo/bar" --verbose
 rundll.net rundll.test.so TestModule.getunion(float) 42.315
-:: test c++/CLR native pointer support
+:: test C++/CLR native pointer support
 rundll.net rundll.test.so TestModule.getpointer(int) 42
 rundll.net rundll.test.so TestModule.getstruct(int,int) 42 315
+:: test C# pointer support
+rundll.net uclib "CommonLanguageRuntime.GetHandle(object)" 315.42f
+rundll.net uclib "CommonLanguageRuntime.GetHandle<string>()"
 :: test F#-support
 rundll.net rundll.test.fs FSTestModule.Fibonacci(int) 20
 :: test IL-support
@@ -83,6 +86,7 @@ rundll.net rundll.net RunDLL.Native.Fibonacci(int) 10
 rundll.net uclib CommonLanguageRuntime.GetCPPTypeString(System.Type) "System.Collections.Generic.List<string>"
 rundll.net uclib "LINQExtensions.Shuffle<int>(int[])" {3,1,5,4,2}
 rundll.net uclib "LINQExtensions.GetTypes<int,string,char[]>()"
+rundll.net rundll.net "Program.ParseParameter(string,System.Type,&dynamic)" {foo,bar,baz,top,kek} "System.Collections.Generic.List<string>" null
 ::--------------------------------------- TODO : FIX THE FOLLOWING CRASHES ---------------------------------------::
 rundll.net uclib "LINQExtensions.GetTypes<int,string,char[],Tuple<Tuple<int,long[][]>,string[,]>>()"
 rundll.net uclib "LINQExtensions.GetTypes<int,string,char[],string[,]>()"

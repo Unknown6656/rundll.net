@@ -340,6 +340,38 @@ namespace RunDLL
                              (_ is BigInteger) ||
                              (_ is num.Complex))
                         return _.ToString();
+                    else if (_ is IntPtr || _ is UIntPtr)
+                    {
+                        void* ptr = _ is IntPtr ? (void*)(IntPtr)_ : (void*)(UIntPtr)_;
+                        object obj = null;
+
+                        try
+                        {
+                            Marshal.PtrToStructure((IntPtr)ptr, obj);
+                        }
+                        catch
+                        {
+                            try
+	                        {
+		                        GCHandle gch = GCHandle.FromIntPtr((IntPtr)ptr);
+
+                                obj = gch.Target;
+	                        }
+	                        catch
+                            {
+                                try 
+	                            {
+		                            obj = Pointer.Box(ptr, typeof(void*));
+	                            }
+	                            catch
+	                            {
+		                            throw;
+	                            }
+                            }
+                        }
+
+                        return string.Format("&[0x{0:x16}]: {1}", (long)_, obj == null ? "(0x----------------)" : print(obj.GetType(), obj));
+                    }
                     else if (T.IsPointer)
                     {
                         byte[] buffer = new byte[Marshal.SizeOf(T)];
@@ -1258,7 +1290,7 @@ Valid usage examples are:
 
                             List<object> obj = new List<object>();
 
-                            foreach (string s in from elem in argv.Split(',')
+                            foreach (string s in from elem in argv.SplitByComma()
                                                  let telem = elem.Trim()
                                                  where telem.Length > 0
                                                  select telem)
@@ -1396,7 +1428,20 @@ Valid usage examples are:
 
                             return arr.ToList();
                         }
-                        // TODO : Fix IEnumerable<> parsing
+                        else if (typeof(IList).IsAssignableFrom(T))
+                        {
+                            object targ = Activator.CreateInstance(T);
+                            object obj;
+
+                            ParseParameter(argv, typeof(object[]), out obj);
+
+                            IList list = (targ as IList);
+
+                            foreach (object o in obj as object[])
+                                list.Add(o);
+
+                            return targ;
+                        }
 
                         return argv;
                     })

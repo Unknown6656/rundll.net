@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
-    <StartArguments>rundll.net RunDLL.Native.Fibonacci%28int%29 10</StartArguments>
+    <StartArguments>rundll.net "Program.ParseParameter%28string,System.Type,&amp;dynamic%29" {foo,bar,baz,top,kek} "System.Collections.Generic.List&lt;string&gt;" null</StartArguments>
   </PropertyGroup>
   <PropertyGroup>
     <ProjectView>ProjectFiles</ProjectView>
