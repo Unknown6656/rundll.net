@@ -94,11 +94,13 @@ The batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/maste
 
 ##Changelog
 
+ - **2016-06-12** Version _1.1.3_:
+<br/>&#43; Fixed bugs concerning generic type parsing, when the generic arguments were passed as part of the parent type before the constructor string token
  - **2016-06-05** Version _1.1.2_:
 <br/>&#43; Added generic list parsing support
  - **2016-06-05** Version _1.1.1_:
 <br/>&#42; Fixed some generic array parsing bugs (but not yet deeply nested generic types)
- - **2016-06-05** Version _1.1.0_:
+ - **2016-06-05** Version _1.1.0 (Generic update)_:
 <br/>&#43; Added generic method support
  - **2016-06-04** Version _1.0.2_:
 <br/>&#43; Added internal CIL code support

@@ -84,9 +84,10 @@ rundll.net rundll.net RunDLL.Native.Fibonacci(int) 10
 
 :: test generic support
 rundll.net uclib CommonLanguageRuntime.GetCPPTypeString(System.Type) "System.Collections.Generic.List<string>"
+rundll.net uclib "Generic.BinaryTree<int>.//ctor(int[])" {3,1,5,4,2}
 rundll.net uclib "LINQExtensions.Shuffle<int>(int[])" {3,1,5,4,2}
 rundll.net uclib "LINQExtensions.GetTypes<int,string,char[]>()"
-rundll.net rundll.net "Program.ParseParameter(string,System.Type,&dynamic)" {foo,bar,baz,top,kek} "System.Collections.Generic.List<string>" null
+rundll.net rundll.net "Program.ParseParameter(string,System.Type,&dynamic)" {foo,bar,baz,top,kek,test,string} "System.Collections.Generic.List<string>" null
 ::--------------------------------------- TODO : FIX THE FOLLOWING CRASHES ---------------------------------------::
 rundll.net uclib "LINQExtensions.GetTypes<int,string,char[],Tuple<Tuple<int,long[][]>,string[,]>>()"
 rundll.net uclib "LINQExtensions.GetTypes<int,string,char[],string[,]>()"

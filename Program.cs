@@ -36,15 +36,18 @@ namespace RunDLL
     /// <summary>
     /// The application's static class
     /// </summary>
-    public unsafe static class Program
+    public unsafe static class program
     {
+
         internal const string STR_REGEX_G_TYPEBASE_R = @"\s*(?<class>([\w]+\.?)+)(\s*\<(?<params>(.+\s*(\,\s*)?)+)\>)\s*";
         internal const string STR_REGEX_G_TYPEBASE = @"^" + STR_REGEX_G_TYPEBASE_R + "$";
+        internal const string STR_REGEX_G_TYPEBASE_ONAMESPACE = @"^\s*(?<class>(\w+\.)*\w+)\s*(\s*\<(?<params>(.+\s*(\,\s*)?)+)\>)?\s*";
+        // @"^\s*(?<namespace>(\w+\.)*)(?<class>\w+)\s*(?<params>\<[\w,.\s]+\>)?\s*";
         internal const string STR_REGEX_FLOAT = @"\s*(?<sign>\+|\-)?\s*(?<value>[0-9]*(\.|\,)?[0-9]+([e][\-\+]?[0-9]+)?)(d|f|m)?\s*";
         internal const string STR_REGEX_OPBASE = @"(true|false|implicit|explicit|\+\+|--|\|\||&&|<<=?|>>=?|->|~|[+-=!^<>*&|%]=?)";
         internal const string STR_REGEX_PARAMBASE = @"\s*(\s*\,?\s*((ref|out|in)\s+|\&\s*)?(\w+\.)*\w+(\s*((\[\,*\])+|\*+))?)+\s*";
-        internal static readonly Regex REGEX_TYPE = new Regex(@"(?<namespace>(\w+\.)*)(?<class>\w+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        internal static readonly Regex REGEX_METHOD = new Regex(@"((?<namespace>(\w+\.)*)(?<class>\w+\.))?((?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<genparameters>\<(\s*.+)(\s*\,\s*.+)*\s*\>)?(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?|(?<name>\/\/this)(?<parameters>\[" + STR_REGEX_PARAMBASE + @"\])?|(?<name>\/\/op" + STR_REGEX_OPBASE + @")(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        internal static readonly Regex REGEX_TYPE = new Regex(STR_REGEX_G_TYPEBASE_ONAMESPACE + "$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        internal static readonly Regex REGEX_METHOD = new Regex(STR_REGEX_G_TYPEBASE_ONAMESPACE + @"\.((?<name>([a-z_]\w*|\/\/(c?c|d)tor))(?<genparameters>\<(\s*.+)(\s*\,\s*.+)*\s*\>)?(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?|(?<name>\/\/this)(?<parameters>\[" + STR_REGEX_PARAMBASE + @"\])?|(?<name>\/\/op" + STR_REGEX_OPBASE + @")(?<parameters>\(" + STR_REGEX_PARAMBASE + @"\))?)\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         internal static readonly Dictionary<string, Tuple<string, string>> PRIMITIVES = new Dictionary<string, Tuple<string, string>>() {
             { "bool", new Tuple<string, string>("System", "Boolean") },
             { "byte", new Tuple<string, string>("System", "Byte") },
@@ -85,7 +88,7 @@ namespace RunDLL
         /// <summary>
         /// Static constructor
         /// </summary>
-        static Program()
+        static program()
         {
         }
         
@@ -94,13 +97,14 @@ namespace RunDLL
         /// </summary>
         /// <param name="args">Command line arguments</param>
         /// <returns>Application exit code</returns>
+        [method: STAThread]
         public static int Main(string[] args)
         {
             int retcode = 1;
 
             try
             {
-                typeof(Program).GetMethod("LoadAsssembly").WarmUp();
+                typeof(program).GetMethod("LoadAsssembly").WarmUp();
 
                 foreach (MethodInfo nfo in typeof(IEnumerable<>).GetMethods()
                                     .Union(typeof(Assembly).GetMethods()))
@@ -115,6 +119,9 @@ namespace RunDLL
             }
             finally
             {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+
                 if (Debugger.IsAttached)
                     Win32.system("pause");
             }
@@ -162,7 +169,8 @@ namespace RunDLL
 
             if (reg.Success)
             {
-                sig.Namespace = (reg.Groups["namespace"].ToString() ?? "").Trim('.', ' ', '\r', '\t', '\n');
+                sig.TypeParameters = (from string s in (reg.Groups["params"].ToString() ?? "").Trim().SplitByComma(false)
+                                      select s.Trim()).ToArray();
                 sig.Class = (reg.Groups["class"].ToString() ?? "").Trim('.', ' ', '\r', '\t', '\n');
                 sig.Member = (reg.Groups["name"].ToString() ?? "").Trim('.', ' ', '\r', '\t', '\n');
                 sig.Arguments = (from string s in (reg.Groups["parameters"].ToString() ?? "").Trim().SplitByComma(true)
@@ -179,7 +187,7 @@ namespace RunDLL
 
             LoadAssemblies(args);
 
-            Type @class = FetchGenericType(sig.FullClass);
+            Type @class = FetchGenericType(sig.Class + (sig.TypeParameters.Length > 0 ? '<' + string.Join(",", sig.TypeParameters) + '>' : ""));
 
             if (@class == null)
                 return 0;
@@ -1227,6 +1235,8 @@ Valid usage examples are:
 
             try
             {
+                #region PRE-PARSE STRING TO INT/FLOAT
+
                 if ((m = Regex.Match(argv, @"^\s*(?<sign>\+|\-)?\s*(0x(?<value>[0-9a-f]+)h?)\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)).Success)
                 {
                     BigInteger ul = BigInteger.Parse(m.Groups["value"].ToString(), NumberStyles.HexNumber | NumberStyles.AllowHexSpecifier);
@@ -1256,6 +1266,9 @@ Valid usage examples are:
 
                     isflt = true;
                 }
+
+                #endregion
+                #region PATTERN MATCHING
 
                 param = new TypeMatcher<object>()
                     .Case(T => T.PassedByReference(), (_, T) => {
@@ -1446,6 +1459,8 @@ Valid usage examples are:
                         return argv;
                     })
                     [type, argv];
+
+                #endregion
 
                 return true;
             }
@@ -1910,23 +1925,15 @@ Valid usage examples are:
         public string Class { get; set; }
         public string Member { get; set; }
         public bool IsProperty { get; set; }
-        public string Namespace { get; set; }
         public string[] Arguments { get; set; }
+        public string[] TypeParameters { get; set; }
         public string[] GenericArguments { get; set; }
-
-        public string FullClass
-        {
-            get
-            {
-                return Namespace + '.' + Class;
-            }
-        }
 
         public string FullMember
         {
             get
             {
-                return FullClass + '.' + Member;
+                return Class + (TypeParameters.Length > 0 ? '<' + string.Join(", ", TypeParameters) + '>' : "") + '.' + Member;
             }
         }
     }
@@ -1934,7 +1941,7 @@ Valid usage examples are:
     /// <summary>
     /// Contains information about the current assembly build version
     /// </summary>
-    [AttributeUsage(AttributeTargets.Assembly)]
+    [Serializable, AttributeUsage(AttributeTargets.Assembly)]
     public class BuildInformationAttribute
         : Attribute
     {
