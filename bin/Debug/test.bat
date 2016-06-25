@@ -64,6 +64,7 @@ rundll.net uclib Complex.//op+(Complex,Complex) (1,0) (4,2)
 rundll.net uclib CoreLib.Win32.GetMasterVolume(^&float) 0
 rundll.net uclib CoreLib.Win32.joyGetPosEx(int,^&JOYINFOEX) 0 new
 rundll.net uclib CoreLib.Win32.GetBinaryType(string,^&BinaryType) "rundll.net.exe" new
+rundll.net uclib BitmapEffectFunctions.RGBtoHSL(byte,byte,byte,^&double,^&double,^&double) 31 250 42 0 0 0
 :: test C++/CLR-support
 rundll.net rundll.test.so TestModule::length(string) "foo/bar" --verbose
 rundll.net rundll.test.so TestModule.getunion(float) 42.315

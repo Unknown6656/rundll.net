@@ -2040,6 +2040,27 @@
             <param name="number">Numeric value</param>
             <returns>Subscript string</returns>
         </member>
+        <member name="M:CoreLib.Text.Normalize(System.Single)">
+            <summary>
+            Normalizes the given floating-point value and returns the normalized value
+            </summary>
+            <param name="value">Input floating-point number</param>
+            <returns>Normalized value (between 0 and 1)</returns>
+        </member>
+        <member name="M:CoreLib.Text.Normalize(System.Double)">
+            <summary>
+            Normalizes the given floating-point value and returns the normalized value
+            </summary>
+            <param name="value">Input floating-point number</param>
+            <returns>Normalized value (between 0 and 1)</returns>
+        </member>
+        <member name="M:CoreLib.Text.Normalize(System.Decimal)">
+            <summary>
+            Normalizes the given floating-point value and returns the normalized value
+            </summary>
+            <param name="value">Input floating-point number</param>
+            <returns>Normalized value (between 0 and 1)</returns>
+        </member>
         <member name="M:CoreLib.Text.IsNumeric(System.String)">
             <summary>
             Returns whether the given string can be passed as any numeric value (integer, decimal or floating-point)

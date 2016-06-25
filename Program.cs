@@ -38,6 +38,7 @@ namespace RunDLL
     /// </summary>
     public unsafe static class program
     {
+        #region FIELDS
 
         internal const string STR_REGEX_G_TYPEBASE_R = @"\s*(?<class>([\w]+\.?)+)(\s*\<(?<params>(.+\s*(\,\s*)?)+)\>)\s*";
         internal const string STR_REGEX_G_TYPEBASE = @"^" + STR_REGEX_G_TYPEBASE_R + "$";
@@ -84,14 +85,9 @@ namespace RunDLL
         internal static Assembly targasm;
         internal static FileInfo targnfo;
 
+        #endregion
+        #region MAIN
 
-        /// <summary>
-        /// Static constructor
-        /// </summary>
-        static program()
-        {
-        }
-        
         /// <summary>
         /// The application's entry point
         /// </summary>
@@ -294,296 +290,8 @@ namespace RunDLL
             return 0;
         }
 
-        /// <summary>
-        /// Prints the given exception
-        /// </summary>
-        /// <param name="_">Exception</param>
-        /// <param name="i">Indentation level</param>
-        /// <returns>Print string</returns>
-        internal static string PrintException(Exception _, int i = 0)
-        {
-            return string.Join("\n", from s in string.Format("[HResult 0x{2:x8} {2}] '{0}'\n{5}\n{1}\n{4}\n{6}{3}",
-                                                             _.Message,
-                                                             _.StackTrace,
-                                                             _.HResult,
-                                                            (_.HelpLink ?? "").Length > 0 ? "\nSee `" + _.HelpLink + "` for more information..." : "",
-                                                             _.Data.ToDebugString(),
-                                                             _.TargetSite.GetCPPSignature(),
-                                                             _.InnerException == null ? "" : "Inner exception:\n" + PrintException(_.InnerException, i + 1) + "\n")
-                                                     .Split('\n')
-                                     select new string(' ', i * 4) + s);
-        }
-
-        /// <summary>
-        /// Prints the given return value
-        /// </summary>
-        /// <param name="args">Command line arguments?</param>
-        /// <param name="constructor">Is constructor?</param>
-        /// <param name="static">Is the method static?</param>
-        /// <param name="return">Method return value</param>
-        /// <param name="class">Parent type</param>
-        /// <param name="member">Member information</param>
-        /// <param name="cmember">Constructor member information</param>
-        /// <param name="cparameters">The passed invocation parameters</param>
-        public static void PrintReturnValue(string[] args, bool constructor, bool @static, object @return, Type @class, MethodInfo member, ConstructorInfo cmember, object[] cparameters)
-        {
-            if (!(constructor && @static))
-            {
-                Console.ForegroundColor = ConsoleColor.Gray;
-
-                if (constructor)
-                    Console.WriteLine("\n---------------------------- OBJECT INSTANCE ---------------------------");
-                else
-                    Console.WriteLine("\n----------------------------- RETURN VALUE -----------------------------");
-
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("\n{0}:", (constructor ? @class : member.ReturnType).GetCPPTypeString());
-
-                Func<Type, object, string> print = null;
-                
-                print = new Func<Type, object, string>((T, _) => {
-                    if (_ == null)
-                        return "nullptr";
-                    else if ((T.IsPrimitive) ||
-                             (_ is BigInteger) ||
-                             (_ is num.Complex))
-                        return _.ToString();
-                    else if (_ is IntPtr || _ is UIntPtr)
-                    {
-                        void* ptr = _ is IntPtr ? (void*)(IntPtr)_ : (void*)(UIntPtr)_;
-                        object obj = null;
-
-                        try
-                        {
-                            Marshal.PtrToStructure((IntPtr)ptr, obj);
-                        }
-                        catch
-                        {
-                            try
-	                        {
-		                        GCHandle gch = GCHandle.FromIntPtr((IntPtr)ptr);
-
-                                obj = gch.Target;
-	                        }
-	                        catch
-                            {
-                                try 
-	                            {
-		                            obj = Pointer.Box(ptr, typeof(void*));
-	                            }
-	                            catch
-	                            {
-		                            throw;
-	                            }
-                            }
-                        }
-
-                        return string.Format("&[0x{0:x16}]: {1}", (long)_, obj == null ? "(0x----------------)" : print(obj.GetType(), obj));
-                    }
-                    else if (T.IsPointer)
-                    {
-                        byte[] buffer = new byte[Marshal.SizeOf(T)];
-                        void* ptr = Pointer.Unbox(_);
-                        IntPtr addr = (IntPtr)ptr;
-                        Type stype = T.GetElementType();
-                        object obj = Marshal.PtrToStructure(addr, stype);
-
-                        return string.Format("&[0x{0:x16}]: {1}", addr.ToInt64(), print(stype, obj));
-                    }
-                    else if (T.IsSerializable)
-                        try
-                        {
-                            return T.GetCPPTypeString() + ": " + new JavaScriptSerializer().Serialize(_).FormatJSON();
-                        }
-                        catch
-                        {
-                            try
-                            {
-                                return Serialization.Serialize(_).FormatXML();
-                            }
-                            catch
-                            {
-                                int depth = 1;
-
-                                try
-                                {
-                                    depth = (from argv in args
-                                             let targv = argv.Trim().ToLower()
-                                             where targv.StartsWith("--depth") ||
-                                                   targv.StartsWith("-d")
-                                             select int.Parse(Regex.Match(targv, @"^\s*(\-\-depth|\-d)(?<value>[1-7])\s*$").Groups["value"].ToString())).Max();
-                                } catch { }
-
-                                return _.var_dump(CheckPrintability("├─└╞═╘"/* <--ibm850 */), depth); //  "├─└╞═╘" /* <--unicode */
-                            }
-                        }
-                    else if (_ is IEnumerable)
-                    {
-                        IEnumerable ien = _ as IEnumerable;
-                        StringBuilder sb = new StringBuilder();
-                        int cnt = 0;
-
-                        sb.Append('{')
-                          .AppendLine();
-
-                        foreach (object c in ien)
-                        {
-                            sb.AppendFormat("[0x{0:x8}]:", cnt);
-
-                            foreach (string l in Regex.Replace(print(c.GetType(), c), @"[\r\n]+", "\n").Split('\n'))
-                                sb.Append("\n    ")
-                                  .Append(l);
-
-                            sb.AppendLine(",");
-
-                            cnt++;
-                        }
-
-                        return sb.Append('}')
-                                 .Insert(0, "(Size: 0x" + cnt.ToString("x8") + ") ")
-                                 .ToString();
-                    }
-                    else
-                        return _.ToString();
-                });
-
-                Console.WriteLine(print(constructor ? @class : member.ReturnType, @return));
-                
-                ParameterInfo[] pnfo = constructor ? cmember.GetParameters() : member.GetParameters();
-                List<object> cparams = new List<object>();
-
-                for (int i = 0, l = Math.Min(pnfo.Length, cparameters.Length); i < l; i++)
-                    if (pnfo[i].Attributes.HasFlag(ParameterAttributes.Out) || pnfo[i].ParameterType.PassedByReference())
-                        cparams.Add(cparameters[i]);
-
-                if (cparams.Count > 0)
-                {
-                    Console.ForegroundColor = ConsoleColor.Gray;
-                    Console.WriteLine("\nParameters passed by reference:");
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.WriteLine(print(typeof(IEnumerable<object>), cparams));
-                }
-            }
-
-            Console.WriteLine("\n------------------------------------------------------------------------\n");
-        }
-
-        /// <summary>
-        /// Checks, wether the given string can be printed inside the stdio-stream using the current character encoding
-        /// </summary>
-        /// <param name="p">String to be printed</param>
-        /// <returns>Check result</returns>
-        public static bool CheckPrintability(string p)
-        {
-            return CheckPrintability(p, Console.OutputEncoding);
-        }
-
-        /// <summary>
-        /// Checks, wether the given string can be printed using the given character encoding
-        /// </summary>
-        /// <param name="p">String to be printed</param>
-        /// <param name="enc">Character encoding</param>
-        /// <returns>Check result</returns>
-        public static bool CheckPrintability(string p, Encoding enc)
-        {
-            return enc.GetString(enc.GetBytes(p)) == p;
-        }
-
-        /// <summary>
-        /// Displays the help page on demand
-        /// </summary>
-        /// <param name="args">Command line arguments</param>
-        /// <returns>Return value, which indicates, whether the help page has been shown</returns>
-        public static bool DisplayHelp(string[] args)
-        {
-            if (args.Length == 0 || (from arg in args
-                                     let targ = arg.ToLower().Trim()
-                                     where targ == "--help" ||
-                                           targ == "-h" ||
-                                           targ == "/?" ||
-                                           targ == "-?" 
-                                     select true).Count() > 0)
-            {
-                string helpstr = string.Format(Properties.Resources.PrintedHeader.Replace("{0}", "{1}") + @"
-This application allows the execution of static and instance functions inside
-compiled .NET-assemblies, e.g. inside static and dynamic libraries or controls
-(aka .dll, .module, .tlb, .olb, .ocx, .exe, ...). All method I/O-stream output
-will be redirected to the current console host (if not otherwise instructed
-inside the called method).
-
-The usage is defined as follows:
-    {0} <library> ['new'] <method> [arguments, ...]
-
-with the following parameters:
-    libaray   - The .NET assembly file name or path
-    'new'     - The 'new'-keyword is optional, but must be passed if the
-                method in question is not a static one (without the quotes).
-    method    - Either a fully qualified namespace, class and method signature
-                or the name of the class (if unique) followed by the unique
-                method name (or optinal parameters to identify the method).
-                Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to
-                address the type's instance  constructor, static constructor
-                or destructor.  Use `.//op____` to invoke an operator, where
-                ____ represents the operator token, which can be found on the
-                website https://github.com/Unknown6656/rundll.net along with
-                further information.
-    arguments - An optional list of arguments (separated by commas without any
-                whitespace), which will be passed as method parameters to the
-                given method. A serilaized XML- or JSON-string can be passed
-                with @XML:""...."" or @JSON:""...."", where .... is the XML-
-                or JSON-string in question. If the parameter shall bede seria-
-                lized from a JSON- or XML-file, the argument shall be passed
-                as @JSON::""...."" or @XML::""...."", where .... represents
-                the path to the given JSON- or XML-file.
-
-The following options are also defined:
-    -d_, --depth_  - Sets the return value print depth (the symbol `_` must be
-                     a positive integer value between 1 and 7).
-    -v, --verbose  - Prints verbose information about the loaded assembly.
-    -s, --stdlib   - Includes the .NET standard libraries (`System.Data`
-                     `System`, `System.Core` and `System.Numerics`).
-                     Note: The library `mscorlib` is always included.
-    -w, --wpflib   - Includes the .NET WPF (Windows Presentation Foundation)
-                     framework libraries (`System.Xaml.dll`, `WindowsBase.dll`
-                     `PresentationCore.dll`, `PresentationFramework.dll` and
-                     `WindowsFormsIntegration.dll`).
-    -f, --wformlib - Includes the .NET Windows Forms framework libraries
-                     (`System.Drawing.dll`, `System.Windows.Forms.<*>.dll`).
-    -c, --wcflib   - Includes the .NET WCF (Windows Communication Foundation)
-                     framework libraries (`System.ServiceModel.<*>.dll`).
-    -fs, --fsharp  - Includes the .NET F# framework libraries.
-    -u, --uclib    - Includes the .NET Unknown6656 core library `uclib`.
-    -e:, --extlib: - Includes the given .NET library and loads its types. The
-                     assembly's file path must be given directly after the
-                     colon (`:`). This option can be given multiple times.
-    -h, --help     - Displays this help page.
-                
-Valid usage examples are:
-    {0} mscorlib System.IntPtr.Size --depth2
-    {0} /root/Documents/library.olb new ImgLib::Image::Rotate()
-    {0} \\127.0.0.1\app.exe new MainWindow.//ctor(string) ""foobar"" --stdlib
-".TrimEnd(), modname, nfo.Name);
-                string[] lines = helpstr.Split('\n');
-
-                if (Console.WindowHeight < lines.Length + 1)
-                    Console.WindowHeight = lines.Length + 2;
-                if (Console.WindowWidth < lines.Max(x => x.Length + 1))
-                    Console.WindowWidth = lines.Max(x => x.Length + 2);
-
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                ConsoleExtensions.AdvancedAnimatedWriteLine(helpstr, 3f);
-                Console.WriteLine();
-                Console.ForegroundColor = ConsoleColor.White;
-
-                return true;
-            }
-
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine(Properties.Resources.PrintedHeader, nfo.Name, Assembly.GetExecutingAssembly().GetName().Version);
-            Console.WriteLine("Arguments: {0}", string.Join(" ", args));
-
-            return false;
-        }
+        #endregion
+        #region ARGUMENT/PARAMETER FUNCTIONS
 
         /// <summary>
         /// Checks the given argument enumeration for the given short and long option
@@ -695,6 +403,31 @@ Valid usage examples are:
 
             return split.ToArray();
         }
+
+        /// <summary>
+        /// Parses the given brackets as array and returns the generated array type
+        /// </summary>
+        /// <param name="parent">Array element type</param>
+        /// <param name="brackets">Brackets</param>
+        /// <returns>Array type</returns>
+        public static Type ParseArray(Type parent, string brackets)
+        {
+            Match m = Regex.Match(brackets, @"^(\s*\[\s*(?<commas>\,\s*)?\]\s*)");
+
+            if (!m.Success)
+                return parent;
+            else
+            {
+                brackets = brackets.Remove(m.Index, m.Length);
+
+                int commas = m.Groups["commas"].Success ? (from c in m.Groups["commas"].Value where c == ',' select false).Count() : 0;
+
+                return ParseArray(Array.CreateInstance(parent, new int[commas + 1]).GetType(), brackets);
+            }
+        }
+
+        #endregion
+        #region ASSEMBLY FUNCTIONS
 
         /// <summary>
         /// Loads the file based on the given name
@@ -950,6 +683,9 @@ Valid usage examples are:
             allasms = asmlist.Distinct();
         }
 
+        #endregion
+        #region TYPE FUNCTIONS
+
         /// <summary>
         /// Converts the given object instance to the given type
         /// </summary>
@@ -1126,6 +862,9 @@ Valid usage examples are:
             else
                 return FetchType("", typestring);
         }
+
+        #endregion
+        #region MEMBER FUNCTIONS
 
         /// <summary>
         /// Parses the given parameters based on the given command line arguments and returns the parameter object instance list
@@ -1803,26 +1542,299 @@ Valid usage examples are:
 #pragma warning restore
         }
 
+        #endregion
+        #region PRINT FUNCTIONS
+
         /// <summary>
-        /// Parses the given brackets as array and returns the generated array type
+        /// Displays the help page on demand
         /// </summary>
-        /// <param name="parent">Array element type</param>
-        /// <param name="brackets">Brackets</param>
-        /// <returns>Array type</returns>
-        public static Type ParseArray(Type parent, string brackets)
+        /// <param name="args">Command line arguments</param>
+        /// <returns>Return value, which indicates, whether the help page has been shown</returns>
+        public static bool DisplayHelp(string[] args)
         {
-            Match m = Regex.Match(brackets, @"^(\s*\[\s*(?<commas>\,\s*)?\]\s*)");
-
-            if (!m.Success)
-                return parent;
-            else
+            if (args.Length == 0 || (from arg in args
+                                     let targ = arg.ToLower().Trim()
+                                     where targ == "--help" ||
+                                           targ == "-h" ||
+                                           targ == "/?" ||
+                                           targ == "-?"
+                                     select true).Count() > 0)
             {
-                brackets = brackets.Remove(m.Index, m.Length);
+                string helpstr = string.Format(Properties.Resources.PrintedHeader.Replace("{0}", "{1}") + @"
+This application allows the execution of static and instance functions inside
+compiled .NET-assemblies, e.g. inside static and dynamic libraries or controls
+(aka .dll, .module, .tlb, .olb, .ocx, .exe, ...). All method I/O-stream output
+will be redirected to the current console host (if not otherwise instructed
+inside the called method).
 
-                int commas = m.Groups["commas"].Success ? (from c in m.Groups["commas"].Value where c == ',' select false).Count() : 0;
+The usage is defined as follows:
+    {0} <library> ['new'] <method> [arguments, ...]
 
-                return ParseArray(Array.CreateInstance(parent, new int[commas + 1]).GetType(), brackets);
+with the following parameters:
+    libaray   - The .NET assembly file name or path
+    'new'     - The 'new'-keyword is optional, but must be passed if the
+                method in question is not a static one (without the quotes).
+    method    - Either a fully qualified namespace, class and method signature
+                or the name of the class (if unique) followed by the unique
+                method name (or optinal parameters to identify the method).
+                Use `.//ctor`, `.//cctor`, `.//dtor` after the parent type to
+                address the type's instance  constructor, static constructor
+                or destructor.  Use `.//op____` to invoke an operator, where
+                ____ represents the operator token, which can be found on the
+                website https://github.com/Unknown6656/rundll.net along with
+                further information.
+    arguments - An optional list of arguments (separated by commas without any
+                whitespace), which will be passed as method parameters to the
+                given method. A serilaized XML- or JSON-string can be passed
+                with @XML:""...."" or @JSON:""...."", where .... is the XML-
+                or JSON-string in question. If the parameter shall bede seria-
+                lized from a JSON- or XML-file, the argument shall be passed
+                as @JSON::""...."" or @XML::""...."", where .... represents
+                the path to the given JSON- or XML-file.
+
+The following options are also defined:
+    -d_, --depth_  - Sets the return value print depth (the symbol `_` must be
+                     a positive integer value between 1 and 7).
+    -v, --verbose  - Prints verbose information about the loaded assembly.
+    -s, --stdlib   - Includes the .NET standard libraries (`System.Data`
+                     `System`, `System.Core` and `System.Numerics`).
+                     Note: The library `mscorlib` is always included.
+    -w, --wpflib   - Includes the .NET WPF (Windows Presentation Foundation)
+                     framework libraries (`System.Xaml.dll`, `WindowsBase.dll`
+                     `PresentationCore.dll`, `PresentationFramework.dll` and
+                     `WindowsFormsIntegration.dll`).
+    -f, --wformlib - Includes the .NET Windows Forms framework libraries
+                     (`System.Drawing.dll`, `System.Windows.Forms.<*>.dll`).
+    -c, --wcflib   - Includes the .NET WCF (Windows Communication Foundation)
+                     framework libraries (`System.ServiceModel.<*>.dll`).
+    -fs, --fsharp  - Includes the .NET F# framework libraries.
+    -u, --uclib    - Includes the .NET Unknown6656 core library `uclib`.
+    -e:, --extlib: - Includes the given .NET library and loads its types. The
+                     assembly's file path must be given directly after the
+                     colon (`:`). This option can be given multiple times.
+    -h, --help     - Displays this help page.
+                
+Valid usage examples are:
+    {0} mscorlib System.IntPtr.Size --depth2
+    {0} /root/Documents/library.olb new ImgLib::Image::Rotate()
+    {0} \\127.0.0.1\app.exe new MainWindow.//ctor(string) ""foobar"" --stdlib
+".TrimEnd(), modname, nfo.Name);
+                string[] lines = helpstr.Split('\n');
+
+                if (Console.WindowHeight < lines.Length + 1)
+                    Console.WindowHeight = lines.Length + 2;
+                if (Console.WindowWidth < lines.Max(x => x.Length + 1))
+                    Console.WindowWidth = lines.Max(x => x.Length + 2);
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                ConsoleExtensions.AdvancedAnimatedWriteLine(helpstr, 3f);
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.White;
+
+                return true;
             }
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine(Properties.Resources.PrintedHeader, nfo.Name, Assembly.GetExecutingAssembly().GetName().Version);
+            Console.WriteLine("Arguments: {0}", string.Join(" ", args));
+
+            return false;
+        }
+
+        /// <summary>
+        /// Prints the given exception
+        /// </summary>
+        /// <param name="_">Exception</param>
+        /// <param name="i">Indentation level</param>
+        /// <returns>Print string</returns>
+        internal static string PrintException(Exception _, int i = 0)
+        {
+            return string.Join("\n", from s in string.Format("[HResult 0x{2:x8} {2}] '{0}'\n{5}\n{1}\n{4}\n{6}{3}",
+                                                             _.Message,
+                                                             _.StackTrace,
+                                                             _.HResult,
+                                                            (_.HelpLink ?? "").Length > 0 ? "\nSee `" + _.HelpLink + "` for more information..." : "",
+                                                             _.Data.ToDebugString(),
+                                                             _.TargetSite.GetCPPSignature(),
+                                                             _.InnerException == null ? "" : "Inner exception:\n" + PrintException(_.InnerException, i + 1) + "\n")
+                                                     .Split('\n')
+                                     select new string(' ', i * 4) + s);
+        }
+
+        /// <summary>
+        /// Prints the given return value
+        /// </summary>
+        /// <param name="args">Command line arguments?</param>
+        /// <param name="constructor">Is constructor?</param>
+        /// <param name="static">Is the method static?</param>
+        /// <param name="return">Method return value</param>
+        /// <param name="class">Parent type</param>
+        /// <param name="member">Member information</param>
+        /// <param name="cmember">Constructor member information</param>
+        /// <param name="cparameters">The passed invocation parameters</param>
+        public static void PrintReturnValue(string[] args, bool constructor, bool @static, object @return, Type @class, MethodInfo member, ConstructorInfo cmember, object[] cparameters)
+        {
+            if (!(constructor && @static))
+            {
+                Console.ForegroundColor = ConsoleColor.Gray;
+
+                if (constructor)
+                    Console.WriteLine("\n---------------------------- OBJECT INSTANCE ---------------------------");
+                else
+                    Console.WriteLine("\n----------------------------- RETURN VALUE -----------------------------");
+
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("\n{0}:", (constructor ? @class : member.ReturnType).GetCPPTypeString());
+
+                Func<Type, object, string> print = null;
+
+                print = new Func<Type, object, string>((T, _) => {
+                    if (_ == null)
+                        return "nullptr";
+                    else if ((T.IsPrimitive) ||
+                             (_ is BigInteger) ||
+                             (_ is num.Complex))
+                        return _.ToString();
+                    else if (_ is IntPtr || _ is UIntPtr)
+                    {
+                        void* ptr = _ is IntPtr ? (void*)(IntPtr)_ : (void*)(UIntPtr)_;
+                        object obj = null;
+
+                        try
+                        {
+                            Marshal.PtrToStructure((IntPtr)ptr, obj);
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                GCHandle gch = GCHandle.FromIntPtr((IntPtr)ptr);
+
+                                obj = gch.Target;
+                            }
+                            catch
+                            {
+                                try
+                                {
+                                    obj = Pointer.Box(ptr, typeof(void*));
+                                }
+                                catch
+                                {
+                                    throw;
+                                }
+                            }
+                        }
+
+                        return string.Format("&[0x{0:x16}]: {1}", (long)_, obj == null ? "(0x----------------)" : print(obj.GetType(), obj));
+                    }
+                    else if (T.IsPointer)
+                    {
+                        byte[] buffer = new byte[Marshal.SizeOf(T)];
+                        void* ptr = Pointer.Unbox(_);
+                        IntPtr addr = (IntPtr)ptr;
+                        Type stype = T.GetElementType();
+                        object obj = Marshal.PtrToStructure(addr, stype);
+
+                        return string.Format("&[0x{0:x16}]: {1}", addr.ToInt64(), print(stype, obj));
+                    }
+                    else if (T.IsSerializable)
+                        try
+                        {
+                            return T.GetCPPTypeString() + ": " + new JavaScriptSerializer().Serialize(_).FormatJSON();
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                return Serialization.Serialize(_).FormatXML();
+                            }
+                            catch
+                            {
+                                int depth = 1;
+
+                                try
+                                {
+                                    depth = (from argv in args
+                                             let targv = argv.Trim().ToLower()
+                                             where targv.StartsWith("--depth") ||
+                                                   targv.StartsWith("-d")
+                                             select int.Parse(Regex.Match(targv, @"^\s*(\-\-depth|\-d)(?<value>[1-7])\s*$").Groups["value"].ToString())).Max();
+                                }
+                                catch { }
+
+                                return _.var_dump(CheckPrintability("├─└╞═╘"/* <--ibm850 */), depth); //  "├─└╞═╘" /* <--unicode */
+                            }
+                        }
+                    else if (_ is IEnumerable)
+                    {
+                        IEnumerable ien = _ as IEnumerable;
+                        StringBuilder sb = new StringBuilder();
+                        int cnt = 0;
+
+                        sb.Append('{')
+                          .AppendLine();
+
+                        foreach (object c in ien)
+                        {
+                            sb.AppendFormat("[0x{0:x8}]:", cnt);
+
+                            foreach (string l in Regex.Replace(print(c.GetType(), c), @"[\r\n]+", "\n").Split('\n'))
+                                sb.Append("\n    ")
+                                  .Append(l);
+
+                            sb.AppendLine(",");
+
+                            cnt++;
+                        }
+
+                        return sb.Append('}')
+                                 .Insert(0, "(Size: 0x" + cnt.ToString("x8") + ") ")
+                                 .ToString();
+                    }
+                    else
+                        return _.ToString();
+                });
+
+                Console.WriteLine(print(constructor ? @class : member.ReturnType, @return));
+
+                ParameterInfo[] pnfo = constructor ? cmember.GetParameters() : member.GetParameters();
+                List<object> cparams = new List<object>();
+
+                for (int i = 0, l = Math.Min(pnfo.Length, cparameters.Length); i < l; i++)
+                    if (pnfo[i].Attributes.HasFlag(ParameterAttributes.Out) || pnfo[i].ParameterType.PassedByReference())
+                        cparams.Add(cparameters[i]);
+
+                if (cparams.Count > 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.WriteLine("\nParameters passed by reference:");
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine(print(typeof(IEnumerable<object>), cparams));
+                }
+            }
+
+            Console.WriteLine("\n------------------------------------------------------------------------\n");
+        }
+
+        /// <summary>
+        /// Checks, wether the given string can be printed inside the stdio-stream using the current character encoding
+        /// </summary>
+        /// <param name="p">String to be printed</param>
+        /// <returns>Check result</returns>
+        public static bool CheckPrintability(string p)
+        {
+            return CheckPrintability(p, Console.OutputEncoding);
+        }
+
+        /// <summary>
+        /// Checks, wether the given string can be printed using the given character encoding
+        /// </summary>
+        /// <param name="p">String to be printed</param>
+        /// <param name="enc">Character encoding</param>
+        /// <returns>Check result</returns>
+        public static bool CheckPrintability(string p, Encoding enc)
+        {
+            return enc.GetString(enc.GetBytes(p)) == p;
         }
 
         /// <summary>
@@ -1914,6 +1926,8 @@ Valid usage examples are:
 
             return 0;
         }
+
+        #endregion
     }
 
     /// <summary>

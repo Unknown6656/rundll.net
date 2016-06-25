@@ -94,6 +94,8 @@ The batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/maste
 
 ##Changelog
 
+ - **2016-06-25** Version _1.1.4_:
+<br/>&#43; Fixed uclib-side out-parameter bugs
  - **2016-06-12** Version _1.1.3_:
 <br/>&#43; Fixed bugs concerning generic type parsing, when the generic arguments were passed as part of the parent type before the constructor string token
  - **2016-06-05** Version _1.1.2_:
