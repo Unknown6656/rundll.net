@@ -25,9 +25,9 @@ using CoreLib.Math;
 using CoreLib;
 
 using env = global::System.Environment;
+using num = global::System.Numerics;
 using win = global::System.Drawing;
 using wpf = global::System.Windows;
-using num = global::System.Numerics;
 using cor = global::CoreLib.Math;
 
 namespace RunDLL
@@ -136,6 +136,44 @@ namespace RunDLL
 
             if (DisplayHelp(args))
                 return 0;
+            else if (CheckForOption(args, "test", "t"))
+            {
+                string arg = args.RegArguments().FirstOrDefault() ?? "";
+                string fname = ".tmp~" + DateTime.Now.Ticks.ToString("x") + "~.bat";
+
+                File.WriteAllText(fname, Properties.Resources.test);
+
+                using (Process p = new Process() {
+                    StartInfo = new ProcessStartInfo() {
+                        Arguments = arg,
+                        FileName = fname,
+                        WorkingDirectory = Directory.GetCurrentDirectory(),
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                    },
+                })
+                {
+                    p.Start();
+
+                    using (TextWriter cout = Console.Out)
+                    using (TextWriter cerr = Console.Error)
+                    using (StreamReader pout = p.StandardOutput)
+                    using (StreamReader perr = p.StandardError)
+                    {
+                        cout.Write("\n");
+                        cout.Write(pout.ReadToEnd());
+                        cerr.Write(perr.ReadToEnd());
+
+                        p.WaitForExit();
+                    }
+                }
+
+                File.Delete(fname);
+
+                return 0;
+            }
             else if (args.RegArguments().Length < 2)
             {
                 _err("Invalid argument count.{0}", helpstr);
@@ -1980,5 +2018,9 @@ Valid usage examples are:
         /// The hash of the main IL code file
         /// </summary>
         public string ILHash { set; get; }
+        /// <summary>
+        /// The current assembly's version type
+        /// </summary>
+        public VersionType Version { set; get; }
     }
 }

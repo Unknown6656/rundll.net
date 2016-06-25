@@ -218,7 +218,9 @@ rm -rf it
 rm -rf ru
 rm -rf sr
 rm -rf zh
-</PostBuildEvent>
+
+copy "$(TargetDir)rundll.net.exe" "$(TargetDir)Public/rundll.net.exe"
+copy "$(TargetDir)uclib.dll" "$(TargetDir)Public/uclib.dll"</PostBuildEvent>
   </PropertyGroup>
   <PropertyGroup>
     <PreBuildEvent>rundll.vers.exe</PreBuildEvent>

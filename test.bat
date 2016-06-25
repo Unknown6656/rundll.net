@@ -3,6 +3,7 @@
 ::---------------------------------------------------------------------------------------------------------------------
 @echo off
 title rundll.net test methods
+color 0f
 
 if "%1" == "valid" (
 	cls
@@ -21,12 +22,24 @@ if "%1" == "all" (
 :usage
 cls
 echo.
+color 08
+echo COPYRIGHT (C) 2016, UNKNOWN6656
+echo .
+color 04
+echo Invalid or missing argument(s).
+echo.
+color 0e
 echo Usage: %0 ^<valid^>   for valid tests
 echo or     %0 ^<fail^>    for invalid tests
 echo or     %0 ^<all^>     for all tests
+color 0f
 goto end
 ::--------------------------------- INVALID tests (and syntax error test) follow here ---------------------------------
 :error
+color 08
+echo INVALID TEST CASES:
+echo.
+color 0f
 cls
 rundll.net --foo
 rundll.net /dev/null 0
@@ -42,6 +55,10 @@ if NOT "%1" == "all" (
 )
 ::---------------------------------------------- valid tests follow here ----------------------------------------------
 :valid
+color 08
+echo VALID TEST CASES:
+echo.
+color 0f
 :: test parameterized dynamic constructors
 rundll.net uclib new math.mathfunction.//ctor(string) "3x^2"
 rundll.net uclib new Complex.//ctor(double,double) 3 5

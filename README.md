@@ -41,6 +41,7 @@ The following global options are defined:
 * `-fs`, `--fsharp`<br/>Includes the .NET F# framework libraries.
 * `-u`, `--uclib`<br/>Includes the .NET Unknown6656 core library `uclib`
 * `-e:...`, `--extlib:...`<br/>Includes the given .NET library and loads its types. The assembly's file path must be given directly after the colon (`:`). This option can be given multiple times.
+* `-t ...`, `--test ...`<br/>Executes the given test case(s), which are stored in the batchfile [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/master/bin/Debug/test.bat). _NOTE: The batchfile is not required to be accessible, as the application stores a copy of the test cases_.
 * `-h`, `--help`<br/>Displays the help page.
 
 _NOTE: Any other dependant library will automatically be loaded by the `rundll.net`-application if required._
@@ -82,7 +83,11 @@ The following operatore tokens are defined:
  - `//opfalse` &#160; &#160; The cast operator `false`
  - `//opimplicit` &#160; &#160; The cast operator `implicit`
  - `//opexplicit` &#160; &#160; The cast operator `explicit`
-                
+
+If a generic parameter is passed as argument to a function or a generic type parameter is required for the function or its parent type, the C#-notation shall be used:
+<br/> &#160; &#160; &#160; &#160; &#160; &#160; &#160;`rundll.net library.so Namespace.Class<T>.Method<U>(Type<V>) ...`
+<br/>_**NOT**_: &#160; `rundll.net library.so Namespace.Class(Of T).Method(Of U)(Type(Of V)) ...`
+
 Valid usage examples are:
 ```
     rundll.net mscorlib System.IntPtr.Size -d2
@@ -94,10 +99,12 @@ The batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/maste
 
 ##Changelog
 
+ - **2016-06-25** Version _1.2.0_:
+<br/>&#43; Added the possibility to execute the stored test cases without the requirement of the batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/master/test.bat)
  - **2016-06-25** Version _1.1.4_:
-<br/>&#43; Fixed uclib-side out-parameter bugs
+<br/>&#42; Fixed uclib-side out-parameter bugs
  - **2016-06-12** Version _1.1.3_:
-<br/>&#43; Fixed bugs concerning generic type parsing, when the generic arguments were passed as part of the parent type before the constructor string token
+<br/>&#42; Fixed bugs concerning generic type parsing, when the generic arguments were passed as part of the parent type before the constructor string token
  - **2016-06-05** Version _1.1.2_:
 <br/>&#43; Added generic list parsing support
  - **2016-06-05** Version _1.1.1_:
