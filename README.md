@@ -1,6 +1,6 @@
 # rundll.net
 
-##Introduction
+## Introduction
 
 The `rundll.net`-project is the .NET equivalent of Window's [`rundll.exe`/`rundll32.exe`](https://support.microsoft.com/en-us/kb/164787)-applications, which allows the caller to run functions inside a given dynamic library. The `rundll.net`-application, however, also the executions of private and static methods of the given [library/module/assembly](https://msdn.microsoft.com/en-us/library/ms973231.aspx).
 
@@ -8,7 +8,7 @@ The following image visualizes the basic functionality and execution timeline co
 ![Functionality and Timeline](timeline.png)
 <br/>
 
-##Usage
+## Usage
 
 The usage is defined as follows:
 ```
@@ -17,7 +17,7 @@ The usage is defined as follows:
 
 with the following parameters:
 
-* `libaray`<br/>
+* `library`<br/>
   The [.NET assembly](https://msdn.microsoft.com/en-us/library/ms973231.aspx) file name or path
 * `'new'`<br/>
   The [`new`](https://msdn.microsoft.com/en-us/library/fa0ab757.aspx)-keyword is optional, but must be passed if the method in question is not a static one (without the quotes).
@@ -97,7 +97,7 @@ Valid usage examples are:
 
 The batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/master/test.bat) contains a list of test cases with different usage syntaxes, which can be used as a guide.
 
-##Changelog
+## Changelog
 
  - **2016-06-25** Version _1.2.0_:
 <br/>&#43; Added the possibility to execute the stored test cases without the requirement of the batch file [`test.bat`](https://github.com/Unknown6656/rundll.net/blob/master/test.bat)
